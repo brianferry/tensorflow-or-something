@@ -56,15 +56,35 @@ Examples of good inputs:
         try {
             logger.info(`Pokemon tool executing query: ${query}`);
             
-            // Extract Pokemon name from query
-            const pokemonName = this._extractPokemonName(query);
+            // Check if we have ML-enhanced parameters from quality mode
+            const mlParams = options.mlParams;
+            let pokemonNames = [];
             
-            if (!pokemonName) {
+            if (mlParams && mlParams.pokemonNames.length > 0) {
+                // Use ML-detected Pokemon names (may be multiple for comparisons)
+                pokemonNames = [...new Set(mlParams.pokemonNames)]; // Remove duplicates
+                logger.info(`Using ML-detected Pokemon names: ${pokemonNames.join(', ')}`);
+            } else {
+                // Fall back to traditional extraction
+                const pokemonName = this._extractPokemonName(query);
+                if (pokemonName) {
+                    pokemonNames = [pokemonName];
+                }
+            }
+            
+            if (pokemonNames.length === 0) {
                 return this._generateNoMatchResponse(query, options.performanceMode || 'balanced');
             }
             
-            // Get Pokemon information
-            const pokemonInfo = await this._getPokemonInfo(pokemonName);
+            // Handle multiple Pokemon for competitive matchups
+            if (pokemonNames.length > 1 && (mlParams?.focus === 'competitive' || /\b(versus|vs|against|matchup|compare)\b/.test(query.toLowerCase()))) {
+                return await this._handleCompetitiveMatchup(pokemonNames, query, options, mlParams);
+            }
+            
+            // Single Pokemon analysis
+            const pokemonName = pokemonNames[0];
+            // Get Pokemon information with ML-guided data fetching
+            const pokemonInfo = await this._getPokemonInfo(pokemonName, mlParams);
             
             if (pokemonInfo.error) {
                 return this._generateErrorResponse(pokemonName, pokemonInfo.error, options.performanceMode || 'balanced');
@@ -75,7 +95,8 @@ Examples of good inputs:
                 type: 'pokemon_data',
                 query: query,
                 pokemon: pokemonInfo,
-                performanceMode: options.performanceMode || 'balanced'
+                performanceMode: options.performanceMode || 'balanced',
+                mlEnhanced: !!mlParams
             };
             
         } catch (error) {
@@ -561,6 +582,43 @@ Examples of good inputs:
         response += `For additional analysis of specific matchups, optimization strategies, or comparative studies with other Pokemon, please feel free to request further detailed investigation.`;
         
         return response;
+    }
+    
+    /**
+     * Handle competitive matchup between multiple Pokemon
+     */
+    async _handleCompetitiveMatchup(pokemonNames, query, options, mlParams) {
+        logger.info(`Handling competitive matchup: ${pokemonNames.join(' vs ')}`);
+        
+        try {
+            // Fetch data for all Pokemon
+            const pokemonData = [];
+            for (const name of pokemonNames.slice(0, 3)) { // Limit to 3 Pokemon for performance
+                const info = await this._getPokemonInfo(name, mlParams);
+                if (!info.error) {
+                    pokemonData.push(info);
+                }
+            }
+            
+            if (pokemonData.length < 2) {
+                return this._generateErrorResponse(pokemonNames.join(' vs '), 'Unable to fetch data for competitive matchup', options.performanceMode || 'balanced');
+            }
+            
+            // Return structured data for competitive analysis
+            return {
+                type: 'competitive_matchup',
+                query: query,
+                pokemon: pokemonData,
+                pokemonNames: pokemonNames,
+                performanceMode: options.performanceMode || 'balanced',
+                mlEnhanced: !!mlParams,
+                focus: mlParams?.focus || 'competitive'
+            };
+            
+        } catch (error) {
+            logger.error(`Competitive matchup error: ${error.message}`);
+            return this._generateErrorResponse(pokemonNames.join(' vs '), error.message, options.performanceMode || 'balanced');
+        }
     }
 }
 

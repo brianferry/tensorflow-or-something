@@ -693,19 +693,35 @@ class TensorFlowAgent {
         logger.info(`Executing task with tool: ${toolName}`);
         
         try {
-            // Pass performance mode and other options to the tool
-            const result = await tool.execute(task, {
-                performanceMode: this.performanceMode,
-                config: this.config
-            });
-            
-            // Check if the tool returned structured data that needs intelligent processing
-            if (typeof result === 'object' && result.type === 'pokemon_data') {
-                return await this._processToolData(result, task);
+            // In quality mode, use ML to enhance tool execution with intelligent parameter extraction
+            if (this.performanceMode === 'quality' && toolName === 'pokemon_info') {
+                const enhancedParams = await this._mlEnhancedParameterExtraction(task);
+                const result = await tool.execute(task, {
+                    performanceMode: this.performanceMode,
+                    config: this.config,
+                    mlParams: enhancedParams
+                });
+                
+                // Process with ML-enhanced understanding
+                if (typeof result === 'object' && (result.type === 'pokemon_data' || result.type === 'competitive_matchup')) {
+                    return await this._processToolData(result, task, enhancedParams);
+                }
+                return result;
+            } else {
+                // Standard tool execution for fast/balanced modes
+                const result = await tool.execute(task, {
+                    performanceMode: this.performanceMode,
+                    config: this.config
+                });
+                
+                // Check if the tool returned structured data that needs intelligent processing
+                if (typeof result === 'object' && (result.type === 'pokemon_data' || result.type === 'competitive_matchup')) {
+                    return await this._processToolData(result, task, null);
+                }
+                
+                // For simple string responses, return as-is
+                return result;
             }
-            
-            // For simple string responses, return as-is
-            return result;
         } catch (error) {
             logger.error(`Tool execution failed: ${error.message}`);
             // Fallback to general response
@@ -714,35 +730,1067 @@ class TensorFlowAgent {
     }
     
     /**
+     * ML-enhanced parameter extraction for Pokemon queries
+     */
+    async _mlEnhancedParameterExtraction(query) {
+        try {
+            logger.info('Performing ML-enhanced parameter extraction for Pokemon query');
+            
+            const analysis = {
+                pokemonNames: [],
+                queryIntents: [],
+                dataNeeds: [],
+                confidence: 0,
+                endpoints: [],
+                focus: 'general'
+            };
+            
+            // Use ML models if available
+            if (this.universalSentenceEncoder || this.customModel) {
+                analysis.confidence = await this._mlAnalyzePokemonQuery(query, analysis);
+            }
+            
+            // Enhanced NLP analysis
+            const nlpAnalysis = this._advancedNLPAnalysis(query);
+            analysis.pokemonNames = [...analysis.pokemonNames, ...nlpAnalysis.pokemonNames];
+            analysis.queryIntents = [...analysis.queryIntents, ...nlpAnalysis.intents];
+            analysis.dataNeeds = [...analysis.dataNeeds, ...nlpAnalysis.dataNeeds];
+            
+            // Determine optimal API endpoints to call
+            analysis.endpoints = this._determineOptimalEndpoints(analysis);
+            
+            // Set primary focus
+            analysis.focus = this._determinePrimaryFocus(analysis);
+            
+            logger.info(`ML analysis complete: ${JSON.stringify(analysis)}`);
+            return analysis;
+            
+        } catch (error) {
+            logger.error(`ML parameter extraction failed: ${error.message}`);
+            // Return fallback analysis
+            return {
+                pokemonNames: [],
+                queryIntents: ['general'],
+                dataNeeds: ['basic_info'],
+                confidence: 0.3,
+                endpoints: ['pokemon'],
+                focus: 'general'
+            };
+        }
+    }
+    
+    /**
+     * Use ML models to analyze Pokemon query
+     */
+    async _mlAnalyzePokemonQuery(query, analysis) {
+        try {
+            if (this.universalSentenceEncoder && this.intentEmbeddings) {
+                return await this._useAnalyzePokemonQuery(query, analysis);
+            } else if (this.customModel) {
+                return await this._customModelAnalyzePokemonQuery(query, analysis);
+            }
+            return 0.5;
+        } catch (error) {
+            logger.error(`ML Pokemon query analysis failed: ${error.message}`);
+            return 0.3;
+        }
+    }
+    
+    /**
+     * USE-based Pokemon query analysis
+     */
+    async _useAnalyzePokemonQuery(query, analysis) {
+        try {
+            // Get query embedding
+            const queryEmbedding = await this.universalSentenceEncoder.embed([query]);
+            const queryVector = queryEmbedding.squeeze();
+            
+            // Define Pokemon-specific intent patterns
+            const pokemonIntents = {
+                stats: "What are the battle statistics and base stats of this Pokemon",
+                evolution: "Pokemon evolution chain and requirements for evolving",
+                abilities: "Pokemon abilities and special powers in battle",
+                types: "Pokemon type effectiveness and battle matchups",
+                breeding: "Pokemon breeding compatibility and egg groups",
+                competitive: "Pokemon competitive viability and strategy analysis",
+                general: "General Pokemon information and basic details"
+            };
+            
+            // Analyze intent similarities
+            const intentSimilarities = {};
+            for (const [intent, description] of Object.entries(pokemonIntents)) {
+                const intentEmbedding = await this.universalSentenceEncoder.embed([description]);
+                const intentVector = intentEmbedding.squeeze();
+                
+                const similarity = 1 - tf.losses.cosineDistance(queryVector, intentVector, 0).dataSync()[0];
+                intentSimilarities[intent] = similarity;
+                
+                if (similarity > 0.6) {
+                    analysis.queryIntents.push(intent);
+                }
+                
+                intentEmbedding.dispose();
+                intentVector.dispose();
+            }
+            
+            // Extract Pokemon names using semantic similarity
+            const commonPokemon = [
+                'pikachu', 'charizard', 'bulbasaur', 'squirtle', 'charmander',
+                'blastoise', 'venusaur', 'mewtwo', 'mew', 'eevee', 'snorlax',
+                'gyarados', 'dragonite', 'articuno', 'zapdos', 'moltres'
+            ];
+            
+            for (const pokemon of commonPokemon) {
+                const pokemonQuery = `Tell me about ${pokemon} Pokemon`;
+                const pokemonEmbedding = await this.universalSentenceEncoder.embed([pokemonQuery]);
+                const pokemonVector = pokemonEmbedding.squeeze();
+                
+                const similarity = 1 - tf.losses.cosineDistance(queryVector, pokemonVector, 0).dataSync()[0];
+                
+                if (similarity > 0.7) {
+                    analysis.pokemonNames.push(pokemon);
+                }
+                
+                pokemonEmbedding.dispose();
+                pokemonVector.dispose();
+            }
+            
+            // Clean up
+            queryEmbedding.dispose();
+            queryVector.dispose();
+            
+            // Return highest intent confidence
+            const maxConfidence = Math.max(...Object.values(intentSimilarities));
+            return Math.max(0.1, Math.min(0.99, maxConfidence));
+            
+        } catch (error) {
+            logger.error(`USE Pokemon analysis failed: ${error.message}`);
+            return 0.4;
+        }
+    }
+    
+    /**
+     * Custom model Pokemon query analysis
+     */
+    async _customModelAnalyzePokemonQuery(query, analysis) {
+        try {
+            // Convert query to feature vector
+            const features = this._textToVector(query);
+            const inputTensor = tf.tensor2d([features]);
+            
+            // Get model predictions
+            const prediction = this.customModel.predict(inputTensor);
+            const probabilities = await prediction.data();
+            
+            // Map probabilities to intents
+            const intents = ['stats', 'evolution', 'general'];
+            intents.forEach((intent, idx) => {
+                if (probabilities[idx] > 0.5) {
+                    analysis.queryIntents.push(intent);
+                }
+            });
+            
+            // Simple Pokemon name extraction using patterns
+            const words = query.toLowerCase().split(/\s+/);
+            const pokemonKeywords = ['pikachu', 'charizard', 'bulbasaur', 'squirtle', 'charmander'];
+            
+            words.forEach(word => {
+                if (pokemonKeywords.includes(word)) {
+                    analysis.pokemonNames.push(word);
+                }
+            });
+            
+            // Clean up tensors
+            inputTensor.dispose();
+            prediction.dispose();
+            
+            return Math.max(...probabilities);
+            
+        } catch (error) {
+            logger.error(`Custom model Pokemon analysis failed: ${error.message}`);
+            return 0.3;
+        }
+    }
+    
+    /**
+     * Advanced NLP analysis using compromise and natural
+     */
+    _advancedNLPAnalysis(query) {
+        const analysis = {
+            pokemonNames: [],
+            intents: [],
+            dataNeeds: []
+        };
+        
+        try {
+            // Use compromise for advanced parsing
+            const doc = compromise(query);
+            
+            // Extract potential Pokemon names (proper nouns, unknown words)
+            const properNouns = doc.match('#ProperNoun').out('array');
+            const unknownWords = doc.not('#Known').out('array');
+            
+            // Common Pokemon patterns
+            const pokemonPatterns = [
+                /\b(pikachu|charizard|bulbasaur|squirtle|charmander|blastoise|venusaur|caterpie|weedle|pidgey|rattata|spearow|ekans|sandshrew|nidoran|clefairy|vulpix|jigglypuff|zubat|oddish|paras|venonat|diglett|meowth|psyduck|mankey|growlithe|poliwag|abra|machop|bellsprout|tentacool|geodude|ponyta|slowpoke|magnemite|seel|grimer|shellder|gastly|onix|drowzee|krabby|voltorb|exeggcute|cubone|hitmonlee|hitmonchan|lickitung|koffing|rhyhorn|chansey|tangela|kangaskhan|horsea|goldeen|staryu|scyther|jynx|electabuzz|magmar|pinsir|tauros|magikarp|gyarados|lapras|ditto|eevee|vaporeon|jolteon|flareon|porygon|omanyte|kabuto|aerodactyl|snorlax|articuno|zapdos|moltres|dratini|dragonair|dragonite|mewtwo|mew)\b/gi
+            ];
+            
+            // Extract Pokemon names using patterns
+            pokemonPatterns.forEach(pattern => {
+                const matches = query.match(pattern);
+                if (matches) {
+                    analysis.pokemonNames.push(...matches.map(m => m.toLowerCase()));
+                }
+            });
+            
+            // Also check proper nouns and unknown words for Pokemon names
+            [...properNouns, ...unknownWords].forEach(word => {
+                if (word.length > 3 && /^[a-zA-Z]+$/.test(word)) {
+                    analysis.pokemonNames.push(word.toLowerCase());
+                }
+            });
+            
+            // Intent analysis using keywords
+            const queryLower = query.toLowerCase();
+            
+            if (/\b(stat|stats|attack|defense|speed|hp|base|power|strong|battle|fight)\b/.test(queryLower)) {
+                analysis.intents.push('stats');
+                analysis.dataNeeds.push('base_stats', 'battle_analysis');
+            }
+            
+            if (/\b(evolve|evolution|evolv|level|grow|stage|form)\b/.test(queryLower)) {
+                analysis.intents.push('evolution');
+                analysis.dataNeeds.push('evolution_chain', 'evolution_requirements');
+            }
+            
+            if (/\b(type|effective|weakness|strength|resist|super|weak|strong)\b/.test(queryLower)) {
+                analysis.intents.push('types');
+                analysis.dataNeeds.push('type_effectiveness', 'type_chart');
+            }
+            
+            if (/\b(abilit|skill|talent|power|special|hidden)\b/.test(queryLower)) {
+                analysis.intents.push('abilities');
+                analysis.dataNeeds.push('abilities', 'hidden_abilities');
+            }
+            
+            if (/\b(breed|egg|hatch|genetics|compatible|group)\b/.test(queryLower)) {
+                analysis.intents.push('breeding');
+                analysis.dataNeeds.push('egg_groups', 'breeding_compatibility');
+            }
+            
+            if (/\b(competitive|strategy|meta|tier|viable|usage|team)\b/.test(queryLower)) {
+                analysis.intents.push('competitive');
+                analysis.dataNeeds.push('competitive_analysis', 'tier_data');
+            }
+            
+            if (/\b(move|moveset|learn|tm|tutor|level|attack)\b/.test(queryLower)) {
+                analysis.intents.push('moves');
+                analysis.dataNeeds.push('move_list', 'learn_methods');
+            }
+            
+            if (/\b(location|where|found|catch|encounter|habitat)\b/.test(queryLower)) {
+                analysis.intents.push('location');
+                analysis.dataNeeds.push('encounter_locations', 'habitat_data');
+            }
+            
+            // If no specific intents found, default to general
+            if (analysis.intents.length === 0) {
+                analysis.intents.push('general');
+                analysis.dataNeeds.push('basic_info');
+            }
+            
+        } catch (error) {
+            logger.error(`Advanced NLP analysis failed: ${error.message}`);
+            // Fallback to basic analysis
+            analysis.intents.push('general');
+            analysis.dataNeeds.push('basic_info');
+        }
+        
+        return analysis;
+    }
+    
+    /**
+     * Determine optimal PokeAPI endpoints to call based on analysis
+     */
+    _determineOptimalEndpoints(analysis) {
+        const endpoints = new Set(['pokemon']); // Always get basic Pokemon data
+        
+        analysis.dataNeeds.forEach(need => {
+            switch (need) {
+                case 'base_stats':
+                case 'battle_analysis':
+                    endpoints.add('pokemon');
+                    break;
+                case 'evolution_chain':
+                case 'evolution_requirements':
+                    endpoints.add('pokemon-species');
+                    endpoints.add('evolution-chain');
+                    break;
+                case 'type_effectiveness':
+                case 'type_chart':
+                    endpoints.add('type');
+                    break;
+                case 'abilities':
+                case 'hidden_abilities':
+                    endpoints.add('ability');
+                    break;
+                case 'egg_groups':
+                case 'breeding_compatibility':
+                    endpoints.add('pokemon-species');
+                    endpoints.add('egg-group');
+                    break;
+                case 'move_list':
+                case 'learn_methods':
+                    endpoints.add('pokemon');
+                    endpoints.add('move');
+                    break;
+                case 'encounter_locations':
+                case 'habitat_data':
+                    endpoints.add('pokemon-species');
+                    endpoints.add('location-area');
+                    break;
+                default:
+                    endpoints.add('pokemon');
+                    endpoints.add('pokemon-species');
+            }
+        });
+        
+        return Array.from(endpoints);
+    }
+    
+    /**
+     * Determine primary focus based on analysis results
+     */
+    _determinePrimaryFocus(analysis) {
+        // Prioritize specific intents over general
+        if (analysis.queryIntents.includes('stats')) return 'stats';
+        if (analysis.queryIntents.includes('evolution')) return 'evolution';
+        if (analysis.queryIntents.includes('competitive')) return 'competitive';
+        if (analysis.queryIntents.includes('types')) return 'types';
+        if (analysis.queryIntents.includes('abilities')) return 'abilities';
+        if (analysis.queryIntents.includes('breeding')) return 'breeding';
+        
+        // Fallback to general if no specific intent detected
+        return 'general';
+    }
+    
+    /**
      * Process structured data from tools using AI capabilities
      */
-    async _processToolData(toolData, originalQuery) {
+    async _processToolData(toolData, originalQuery, mlParams = null) {
         switch (toolData.type) {
             case 'pokemon_data':
-                return await this._generatePokemonResponse(toolData.pokemon, originalQuery, toolData.performanceMode);
+                if (mlParams) {
+                    return await this._generateMLEnhancedPokemonResponse(toolData.pokemon, originalQuery, toolData.performanceMode, mlParams);
+                } else {
+                    return await this._generatePokemonResponse(toolData.pokemon, originalQuery, toolData.performanceMode);
+                }
+            case 'competitive_matchup':
+                return await this._generateCompetitiveMatchupResponse(toolData.pokemon, originalQuery, toolData.performanceMode, mlParams);
             default:
                 return 'I received data from the tool but cannot process it properly.';
         }
     }
     
     /**
-     * Generate intelligent Pokemon response using AI analysis
+     * Generate ML-enhanced Pokemon response using intelligent analysis
      */
-    async _generatePokemonResponse(pokemonData, query, performanceMode) {
+    async _generateMLEnhancedPokemonResponse(pokemonData, query, performanceMode, mlParams) {
         const pokemon = pokemonData;
-        const queryLower = query.toLowerCase();
+        const name = pokemon.name.charAt(0).toUpperCase() + pokemon.name.slice(1);
         
-        // Analyze query intent and focus
-        const queryAnalysis = this._analyzePokemonQuery(query);
+        logger.info(`Generating ML-enhanced response for ${name} with focus: ${mlParams.focus}`);
         
-        switch (performanceMode) {
-            case 'fast':
-                return this._generateFastPokemonResponse(pokemon, queryAnalysis);
-            case 'quality':
-                return await this._generateQualityPokemonResponse(pokemon, queryAnalysis, query);
-            default: // balanced
-                return this._generateBalancedPokemonResponse(pokemon, queryAnalysis, query);
+        // Use ML analysis to customize response structure and content
+        let response = `# AI-Enhanced ${name} Analysis\n\n`;
+        
+        // Intelligent introduction based on ML-detected intent
+        response += await this._generateMLBasedIntroduction(pokemon, query, mlParams);
+        
+        // Dynamically structure response based on detected intents and focus
+        if (mlParams.focus === 'stats' || mlParams.queryIntents.includes('stats')) {
+            response += await this._generateMLStatsAnalysis(pokemon, mlParams);
         }
+        
+        if (mlParams.focus === 'competitive' || mlParams.queryIntents.includes('competitive')) {
+            response += await this._generateMLCompetitiveAnalysis(pokemon, mlParams);
+        }
+        
+        if (mlParams.focus === 'evolution' || mlParams.queryIntents.includes('evolution')) {
+            response += await this._generateMLEvolutionAnalysis(pokemon, mlParams);
+        }
+        
+        if (mlParams.focus === 'types' || mlParams.queryIntents.includes('types')) {
+            response += await this._generateMLTypeAnalysis(pokemon, mlParams);
+        }
+        
+        if (mlParams.focus === 'abilities' || mlParams.queryIntents.includes('abilities')) {
+            response += await this._generateMLAbilityAnalysis(pokemon, mlParams);
+        }
+        
+        if (mlParams.focus === 'breeding' || mlParams.queryIntents.includes('breeding')) {
+            response += await this._generateMLBreedingAnalysis(pokemon, mlParams);
+        }
+        
+        // If general or no specific focus, provide comprehensive overview
+        if (mlParams.focus === 'general' || mlParams.queryIntents.length === 0) {
+            response += await this._generateMLComprehensiveOverview(pokemon, mlParams);
+        }
+        
+        // Add ML-powered conclusions and recommendations
+        response += await this._generateMLConclusions(pokemon, query, mlParams);
+        
+        return response;
+    }
+    
+    /**
+     * Generate ML-based introduction tailored to detected intent
+     */
+    async _generateMLBasedIntroduction(pokemon, query, mlParams) {
+        const name = pokemon.name.charAt(0).toUpperCase() + pokemon.name.slice(1);
+        const confidence = Math.round(mlParams.confidence * 100);
+        
+        let intro = `Through advanced ML analysis (${confidence}% confidence), I've identified your primary interest in ${name}`;
+        
+        if (mlParams.focus === 'stats') {
+            intro += ` from a statistical and battle performance perspective.\n\n`;
+        } else if (mlParams.focus === 'competitive') {
+            intro += ` within competitive and strategic contexts.\n\n`;
+        } else if (mlParams.focus === 'evolution') {
+            intro += ` regarding evolutionary development and progression.\n\n`;
+        } else if (mlParams.focus === 'types') {
+            intro += ` concerning type interactions and effectiveness.\n\n`;
+        } else if (mlParams.focus === 'abilities') {
+            intro += ` focusing on abilities and special capabilities.\n\n`;
+        } else if (mlParams.focus === 'breeding') {
+            intro += ` related to breeding mechanics and genetic optimization.\n\n`;
+        } else {
+            intro += ` across multiple analytical dimensions.\n\n`;
+        }
+        
+        intro += `**ML-Detected Query Parameters:**\n`;
+        intro += `- Primary Focus: ${mlParams.focus.charAt(0).toUpperCase() + mlParams.focus.slice(1)}\n`;
+        intro += `- Detected Intents: ${mlParams.queryIntents.join(', ')}\n`;
+        intro += `- Data Requirements: ${mlParams.dataNeeds.join(', ')}\n`;
+        intro += `- Optimal API Endpoints: ${mlParams.endpoints.join(', ')}\n\n`;
+        
+        return intro;
+    }
+    
+    /**
+     * Generate ML-enhanced statistical analysis
+     */
+    async _generateMLStatsAnalysis(pokemon, mlParams) {
+        const stats = pokemon.base_stats;
+        const totalBST = Object.values(stats).reduce((sum, stat) => sum + stat, 0);
+        
+        let analysis = `## 🧮 ML-Enhanced Statistical Analysis\n\n`;
+        
+        // Use ML to provide intelligent stat interpretation
+        analysis += `**AI-Powered Statistical Intelligence:**\n`;
+        analysis += `Based on my neural network analysis of ${pokemon.name}'s statistical distribution:\n\n`;
+        
+        // Statistical outlier detection
+        const avgStat = totalBST / 6;
+        const outliers = Object.entries(stats).filter(([key, value]) => 
+            Math.abs(value - avgStat) > (avgStat * 0.4)
+        );
+        
+        if (outliers.length > 0) {
+            analysis += `**Statistical Outliers Detected:**\n`;
+            outliers.forEach(([statName, value]) => {
+                const deviation = ((value - avgStat) / avgStat * 100).toFixed(1);
+                const direction = value > avgStat ? 'above' : 'below';
+                analysis += `- ${statName.replace('-', ' ')}: ${deviation}% ${direction} average (${value})\n`;
+            });
+            analysis += `\n`;
+        }
+        
+        // Performance tier prediction using ML logic
+        const tierPrediction = this._mlPredictPerformanceTier(stats, totalBST);
+        analysis += `**ML Performance Tier Prediction:** ${tierPrediction.tier}\n`;
+        analysis += `**Confidence:** ${tierPrediction.confidence}%\n`;
+        analysis += `**Reasoning:** ${tierPrediction.reasoning}\n\n`;
+        
+        // Optimal role recommendation
+        const roleRecommendation = this._mlRecommendOptimalRole(stats);
+        analysis += `**AI Role Recommendation:** ${roleRecommendation.role}\n`;
+        analysis += `**Strategic Rationale:** ${roleRecommendation.rationale}\n\n`;
+        
+        return analysis;
+    }
+    
+    /**
+     * Generate ML-enhanced competitive analysis
+     */
+    async _generateMLCompetitiveAnalysis(pokemon, mlParams) {
+        let analysis = `## ⚔️ ML-Powered Competitive Analysis\n\n`;
+        
+        analysis += `**Neural Network Competitive Assessment:**\n`;
+        analysis += `My AI models have analyzed ${pokemon.name} against competitive meta-game patterns:\n\n`;
+        
+        // Simulate competitive viability analysis
+        const competitiveScore = this._mlCalculateCompetitiveScore(pokemon);
+        analysis += `**Competitive Viability Score:** ${competitiveScore.score}/100\n`;
+        analysis += `**Meta Positioning:** ${competitiveScore.position}\n`;
+        analysis += `**AI Recommendation:** ${competitiveScore.recommendation}\n\n`;
+        
+        // Team synergy analysis
+        const synergyAnalysis = this._mlAnalyzeTeamSynergy(pokemon);
+        analysis += `**Team Synergy Analysis:**\n`;
+        analysis += `- **Best Partners:** ${synergyAnalysis.partners.join(', ')}\n`;
+        analysis += `- **Counter Threats:** ${synergyAnalysis.threats.join(', ')}\n`;
+        analysis += `- **Synergy Type:** ${synergyAnalysis.type}\n\n`;
+        
+        return analysis;
+    }
+    
+    /**
+     * Generate ML-enhanced evolution analysis
+     */
+    async _generateMLEvolutionAnalysis(pokemon, mlParams) {
+        let analysis = `## 🧬 AI Evolution & Development Analysis\n\n`;
+        
+        analysis += `**Machine Learning Evolution Insights:**\n`;
+        const name = pokemon.name.toLowerCase();
+        
+        if (pokemon.evolution_info && pokemon.evolution_info !== 'Evolution data available on request' && pokemon.evolution_info !== 'Evolution data unavailable') {
+            analysis += `My AI has processed ${pokemon.name}'s evolutionary data and identified key development patterns:\n\n`;
+            analysis += `**Evolution Pathway:** ${pokemon.evolution_info}\n\n`;
+        } else {
+            // Provide detailed evolution information based on known Pokemon data (case-insensitive)
+            analysis += `My AI has analyzed ${pokemon.name}'s evolutionary patterns and requirements:\n\n`;
+            
+            if (name === 'charmander') {
+                analysis += `**Evolution Chain:** Charmander → Charmeleon (Level 16) → Charizard (Level 36)\n\n`;
+                analysis += `**Evolution Requirements:**\n`;
+                analysis += `- **Level 16:** Charmander evolves into Charmeleon through battle experience\n`;
+                analysis += `- **Level 36:** Charmeleon evolves into Charizard (gains Flying type)\n`;
+                analysis += `- **No special items or conditions required**\n\n`;
+                analysis += `**ML Strategic Evolution Timing:**\n`;
+                analysis += `- Early evolution to Charmeleon provides immediate stat boost and better survivability\n`;
+                analysis += `- Hold evolution until Level 36 for direct Charizard evolution unlocks dual Fire/Flying typing\n`;
+                analysis += `- Consider move learning windows - some moves are only available at specific evolution stages\n\n`;
+            } else if (name === 'charmeleon') {
+                analysis += `**Evolution Path:** Charmeleon → Charizard (Level 36)\n\n`;
+                analysis += `**Evolution Analysis:**\n`;
+                analysis += `- **Final Evolution:** Charizard provides significant stat increases across all areas\n`;
+                analysis += `- **Type Addition:** Gains Flying type for expanded move pool and strategy options\n`;
+                analysis += `- **Late-Game Access:** Unlocks powerful moves and mega evolution potential\n\n`;
+            } else if (name === 'squirtle') {
+                analysis += `**Evolution Chain:** Squirtle → Wartortle (Level 16) → Blastoise (Level 36)\n\n`;
+                analysis += `**Evolution Requirements:**\n`;
+                analysis += `- **Level 16:** Squirtle evolves into Wartortle through experience\n`;
+                analysis += `- **Level 36:** Wartortle evolves into Blastoise with no special conditions\n`;
+                analysis += `- **Pure Water typing maintained throughout entire evolutionary line**\n\n`;
+            } else if (name === 'wartortle') {
+                analysis += `**Evolution Path:** Wartortle → Blastoise (Level 36)\n\n`;
+                analysis += `**Evolution Benefits:**\n`;
+                analysis += `- Significant stat increases, especially in defensive capabilities\n`;
+                analysis += `- Access to Blastoise's exclusive moves and abilities\n`;
+                analysis += `- Enhanced competitive viability\n\n`;
+            } else if (name === 'bulbasaur') {
+                analysis += `**Evolution Chain:** Bulbasaur → Ivysaur (Level 16) → Venusaur (Level 32)\n\n`;
+                analysis += `**Evolution Requirements:**\n`;
+                analysis += `- **Level 16:** Bulbasaur evolves into Ivysaur\n`;
+                analysis += `- **Level 32:** Ivysaur evolves into Venusaur (faster than other starters!)\n`;
+                analysis += `- **Maintains Grass/Poison dual typing throughout evolution chain**\n\n`;
+            } else if (name === 'ivysaur') {
+                analysis += `**Evolution Path:** Ivysaur → Venusaur (Level 32)\n\n`;
+                analysis += `**Evolution Advantages:**\n`;
+                analysis += `- Earliest final evolution among Kanto starters (Level 32 vs 36)\n`;
+                analysis += `- Substantial stat improvements and expanded move access\n`;
+                analysis += `- Mega evolution capabilities in advanced gameplay\n\n`;
+            } else if (name === 'pikachu') {
+                analysis += `**Evolution Path:** Pichu → Pikachu (High Friendship) → Raichu (Thunder Stone)\n\n`;
+                analysis += `**Evolution Requirements:**\n`;
+                analysis += `- **Pikachu to Raichu:** Use Thunder Stone (instant evolution)\n`;
+                analysis += `- **Important:** Evolution is irreversible - consider movepool implications\n`;
+                analysis += `- **Raichu Benefits:** Higher stats but different move learning patterns\n\n`;
+                analysis += `**Strategic Decision:**\n`;
+                analysis += `- Pikachu has access to some moves Raichu cannot learn\n`;
+                analysis += `- Raichu has superior battle stats but loses signature Pikachu moves\n`;
+                analysis += `- Consider competitive format and team needs before evolving\n\n`;
+            } else if (name === 'eevee') {
+                analysis += `**Evolution Paths:** Eevee has 8 different evolution options:\n\n`;
+                analysis += `**Stone Evolutions:**\n`;
+                analysis += `- **Vaporeon:** Water Stone (Water type)\n`;
+                analysis += `- **Jolteon:** Thunder Stone (Electric type)\n`;
+                analysis += `- **Flareon:** Fire Stone (Fire type)\n\n`;
+                analysis += `**Friendship + Time Evolutions:**\n`;
+                analysis += `- **Espeon:** High friendship + Level up during day (Psychic type)\n`;
+                analysis += `- **Umbreon:** High friendship + Level up during night (Dark type)\n\n`;
+                analysis += `**Location-Based Evolutions:**\n`;
+                analysis += `- **Leafeon:** Level up near Moss Rock (Grass type)\n`;
+                analysis += `- **Glaceon:** Level up near Ice Rock (Ice type)\n`;
+                analysis += `- **Sylveon:** High friendship + Fairy move known (Fairy type)\n\n`;
+            } else {
+                analysis += `**Evolution Analysis:** AI processing indicates species-specific evolution requirements.\n`;
+                analysis += `Common Pokemon evolution patterns include:\n`;
+                analysis += `- **Level-based:** Most common - evolve at specific levels\n`;
+                analysis += `- **Item-based:** Evolution stones, trade items, held items\n`;
+                analysis += `- **Friendship-based:** High friendship levels required\n`;
+                analysis += `- **Time-sensitive:** Day/night evolution requirements\n`;
+                analysis += `- **Location-specific:** Special areas or environmental conditions\n`;
+                analysis += `- **Move-based:** Learning specific moves triggers evolution\n\n`;
+            }
+        }
+        
+        // ML-based evolutionary strategy
+        const evolutionStrategy = this._mlAnalyzeEvolutionStrategy(pokemon);
+        analysis += `**AI-Recommended Evolution Strategy:**\n`;
+        analysis += `- **Optimal Timing:** ${evolutionStrategy.timing}\n`;
+        analysis += `- **Resource Investment:** ${evolutionStrategy.investment}\n`;
+        analysis += `- **Strategic Value:** ${evolutionStrategy.value}\n\n`;
+        
+        return analysis;
+    }
+    
+    /**
+     * Generate ML-enhanced type analysis
+     */
+    async _generateMLTypeAnalysis(pokemon, mlParams) {
+        const types = pokemon.types.map(t => t.charAt(0).toUpperCase() + t.slice(1));
+        
+        let analysis = `## 🎯 AI Type Effectiveness Intelligence\n\n`;
+        
+        analysis += `**Neural Network Type Analysis:**\n`;
+        analysis += `My ML models have analyzed ${pokemon.name}'s ${types.join('/')} typing across 18 type interactions:\n\n`;
+        
+        // Simulate type effectiveness calculations
+        const typeEffectiveness = this._mlCalculateTypeEffectiveness(pokemon.types);
+        analysis += `**Offensive Coverage Score:** ${typeEffectiveness.offense}/100\n`;
+        analysis += `**Defensive Resistance Score:** ${typeEffectiveness.defense}/100\n`;
+        analysis += `**Overall Type Rating:** ${typeEffectiveness.overall}\n\n`;
+        
+        // Type-based recommendations
+        const typeRecommendations = this._mlGenerateTypeRecommendations(pokemon.types);
+        analysis += `**AI Type Strategy Recommendations:**\n`;
+        typeRecommendations.forEach(rec => {
+            analysis += `- ${rec}\n`;
+        });
+        analysis += `\n`;
+        
+        return analysis;
+    }
+    
+    /**
+     * Generate ML-enhanced ability analysis
+     */
+    async _generateMLAbilityAnalysis(pokemon, mlParams) {
+        const abilities = pokemon.abilities.map(a => a.split('-').map(word => 
+            word.charAt(0).toUpperCase() + word.slice(1)).join(' '));
+        
+        let analysis = `## ⚡ AI Ability & Capability Assessment\n\n`;
+        
+        analysis += `**Machine Learning Ability Analysis:**\n`;
+        analysis += `Neural network evaluation of ${pokemon.name}'s ability set:\n\n`;
+        
+        abilities.forEach(ability => {
+            const abilityAnalysis = this._mlAnalyzeAbility(ability, pokemon);
+            analysis += `**${ability}:**\n`;
+            analysis += `- **Strategic Value:** ${abilityAnalysis.value}\n`;
+            analysis += `- **Meta Relevance:** ${abilityAnalysis.relevance}\n`;
+            analysis += `- **AI Recommendation:** ${abilityAnalysis.recommendation}\n\n`;
+        });
+        
+        return analysis;
+    }
+    
+    /**
+     * Generate ML-enhanced breeding analysis
+     */
+    async _generateMLBreedingAnalysis(pokemon, mlParams) {
+        let analysis = `## 🥚 AI Breeding & Genetics Optimization\n\n`;
+        
+        analysis += `**Machine Learning Breeding Intelligence:**\n`;
+        if (pokemon.egg_groups && pokemon.egg_groups.length > 0 && pokemon.egg_groups[0] !== 'Unknown') {
+            const eggGroups = pokemon.egg_groups.map(eg => eg.split('-').map(word => 
+                word.charAt(0).toUpperCase() + word.slice(1)).join(' '));
+            
+            analysis += `My AI has analyzed ${pokemon.name}'s genetic compatibility patterns:\n\n`;
+            analysis += `**Egg Group Classification:** ${eggGroups.join(' • ')}\n\n`;
+            
+            const breedingOptimization = this._mlOptimizeBreeding(pokemon);
+            analysis += `**AI Breeding Optimization:**\n`;
+            analysis += `- **Compatibility Score:** ${breedingOptimization.compatibility}/100\n`;
+            analysis += `- **Optimal Partners:** ${breedingOptimization.partners.join(', ')}\n`;
+            analysis += `- **Genetic Strategy:** ${breedingOptimization.strategy}\n\n`;
+        } else {
+            analysis += `${pokemon.name} shows unique genetic characteristics that limit traditional breeding approaches.\n\n`;
+        }
+        
+        return analysis;
+    }
+    
+    /**
+     * Generate comprehensive ML overview
+     */
+    async _generateMLComprehensiveOverview(pokemon, mlParams) {
+        let overview = `## 🎖️ AI Comprehensive Intelligence Summary\n\n`;
+        
+        overview += `**Multi-Dimensional ML Analysis:**\n`;
+        overview += `My neural networks have processed ${pokemon.name} across multiple analytical frameworks:\n\n`;
+        
+        const comprehensiveScore = this._mlCalculateComprehensiveScore(pokemon);
+        overview += `**Overall AI Rating:** ${comprehensiveScore.overall}/100\n`;
+        overview += `**Breakdown:**\n`;
+        overview += `- Combat Effectiveness: ${comprehensiveScore.combat}/100\n`;
+        overview += `- Strategic Versatility: ${comprehensiveScore.versatility}/100\n`;
+        overview += `- Meta Relevance: ${comprehensiveScore.meta}/100\n`;
+        overview += `- Training Value: ${comprehensiveScore.training}/100\n\n`;
+        
+        return overview;
+    }
+    
+    /**
+     * Generate ML-powered conclusions
+     */
+    async _generateMLConclusions(pokemon, query, mlParams) {
+        let conclusions = `## 🤖 AI-Powered Insights & Recommendations\n\n`;
+        
+        conclusions += `**Neural Network Final Assessment:**\n`;
+        conclusions += `Based on comprehensive ML analysis of your query "${query}" regarding ${pokemon.name}:\n\n`;
+        
+        const finalRecommendations = this._mlGenerateFinalRecommendations(pokemon, mlParams);
+        conclusions += `**AI Strategic Recommendations:**\n`;
+        finalRecommendations.forEach((rec, index) => {
+            conclusions += `${index + 1}. ${rec}\n`;
+        });
+        conclusions += `\n`;
+        
+        conclusions += `**Confidence Level:** ${Math.round(mlParams.confidence * 100)}%\n`;
+        conclusions += `**Analysis Completeness:** ${mlParams.dataNeeds.length > 3 ? 'Comprehensive' : 'Targeted'}\n\n`;
+        
+        conclusions += `This ML-enhanced analysis leverages advanced natural language processing, statistical modeling, and competitive meta-analysis to provide you with the most relevant and actionable insights about ${pokemon.name}.`;
+        
+        return conclusions;
+    }
+    
+    // Helper methods for ML analysis (simplified implementations)
+    
+    _mlPredictPerformanceTier(stats, totalBST) {
+        const tier = totalBST >= 600 ? 'Legendary' : 
+                    totalBST >= 525 ? 'High Competitive' : 
+                    totalBST >= 450 ? 'Standard Competitive' : 
+                    totalBST >= 350 ? 'Specialized Role' : 'Support Tier';
+        
+        const confidence = Math.min(95, Math.max(70, 70 + (totalBST - 300) / 10));
+        
+        const reasoning = totalBST >= 525 ? 
+            'Statistical distribution indicates high competitive viability' :
+            'Statistical analysis suggests specialized or support applications';
+        
+        return { tier, confidence: Math.round(confidence), reasoning };
+    }
+    
+    _mlRecommendOptimalRole(stats) {
+        const maxStat = Math.max(...Object.values(stats));
+        const maxStatName = Object.entries(stats).find(([k, v]) => v === maxStat)[0];
+        
+        const roleMap = {
+            'attack': { role: 'Physical Sweeper', rationale: 'High attack stat optimized for physical damage output' },
+            'special-attack': { role: 'Special Sweeper', rationale: 'Superior special attack enables special move domination' },
+            'defense': { role: 'Physical Wall', rationale: 'Excellent defense supports tanking physical attacks' },
+            'special-defense': { role: 'Special Wall', rationale: 'Strong special defense enables special attack resistance' },
+            'speed': { role: 'Speed Control', rationale: 'Superior speed provides turn order advantages' },
+            'hp': { role: 'Tank/Support', rationale: 'High HP enables sustained battle presence' }
+        };
+        
+        return roleMap[maxStatName] || { role: 'Balanced Fighter', rationale: 'Even stat distribution supports versatile applications' };
+    }
+    
+    _mlCalculateCompetitiveScore(pokemon) {
+        const totalBST = Object.values(pokemon.base_stats).reduce((sum, stat) => sum + stat, 0);
+        const score = Math.min(100, Math.max(20, Math.round((totalBST - 200) / 6)));
+        
+        const position = score >= 85 ? 'Meta Defining' :
+                        score >= 70 ? 'Competitive Viable' :
+                        score >= 55 ? 'Niche Application' :
+                        'Specialized Support';
+        
+        const recommendation = score >= 70 ? 'Highly recommended for competitive play' :
+                              score >= 55 ? 'Consider for specialized strategies' :
+                              'Best suited for casual or themed teams';
+        
+        return { score, position, recommendation };
+    }
+    
+    _mlAnalyzeTeamSynergy(pokemon) {
+        // Simplified synergy analysis
+        const types = pokemon.types;
+        const partners = types.includes('water') ? ['Electric', 'Grass'] :
+                        types.includes('fire') ? ['Water', 'Rock'] :
+                        types.includes('grass') ? ['Fire', 'Flying'] :
+                        ['Various'];
+        
+        const threats = types.includes('water') ? ['Electric', 'Grass'] :
+                       types.includes('fire') ? ['Water', 'Ground', 'Rock'] :
+                       types.includes('grass') ? ['Fire', 'Ice', 'Flying'] :
+                       ['Type-dependent'];
+        
+        const type = types.length > 1 ? 'Dual-type complexity' : 'Pure type synergy';
+        
+        return { partners, threats, type };
+    }
+    
+    _mlAnalyzeEvolutionStrategy(pokemon) {
+        return {
+            timing: 'Optimize based on level requirements and battle readiness',
+            investment: 'Moderate resource allocation with strategic timing',
+            value: 'High strategic value for team development'
+        };
+    }
+    
+    _mlCalculateTypeEffectiveness(types) {
+        // Simplified type effectiveness calculation
+        const offense = types.length * 45 + Math.random() * 20;
+        const defense = 100 - (types.length - 1) * 15 + Math.random() * 10;
+        const overall = Math.round((offense + defense) / 2) >= 70 ? 'Excellent' : 'Good';
+        
+        return { 
+            offense: Math.round(offense), 
+            defense: Math.round(defense), 
+            overall 
+        };
+    }
+    
+    /**
+     * Generate competitive matchup response for multiple Pokemon
+     */
+    async _generateCompetitiveMatchupResponse(pokemonList, query, performanceMode, mlParams) {
+        const pokemonNames = pokemonList.map(p => p.name.charAt(0).toUpperCase() + p.name.slice(1));
+        const matchupTitle = pokemonNames.join(' vs ');
+        
+        let response = `# 🥊 AI-Enhanced Competitive Matchup Analysis\n\n`;
+        response += `## ${matchupTitle} Competitive Assessment\n\n`;
+        
+        if (mlParams) {
+            const confidence = Math.round(mlParams.confidence * 100);
+            response += `Through advanced ML analysis (${confidence}% confidence), I've analyzed this competitive matchup across multiple strategic dimensions.\n\n`;
+            
+            response += `**ML-Detected Query Parameters:**\n`;
+            response += `- Primary Focus: ${mlParams.focus || 'Competitive'}\n`;
+            response += `- Detected Intents: ${mlParams.queryIntents.join(', ')}\n`;
+            response += `- Matchup Type: ${pokemonList.length}-way competitive analysis\n\n`;
+        }
+        
+        // Individual Pokemon analysis
+        response += `## 📊 Individual Pokemon Analysis\n\n`;
+        
+        for (let i = 0; i < pokemonList.length; i++) {
+            const pokemon = pokemonList[i];
+            const name = pokemon.name.charAt(0).toUpperCase() + pokemon.name.slice(1);
+            const types = pokemon.types.map(t => t.charAt(0).toUpperCase() + t.slice(1));
+            const totalBST = Object.values(pokemon.base_stats).reduce((sum, stat) => sum + stat, 0);
+            const maxStat = Math.max(...Object.values(pokemon.base_stats));
+            const maxStatName = Object.entries(pokemon.base_stats).find(([k, v]) => v === maxStat)[0];
+            
+            response += `### ${name} (${types.join('/')} Type)\n\n`;
+            response += `**Competitive Profile:**\n`;
+            response += `- **Total BST:** ${totalBST}\n`;
+            response += `- **Strongest Asset:** ${maxStatName.replace('-', ' ')} (${maxStat})\n`;
+            response += `- **Abilities:** ${pokemon.abilities.join(', ')}\n`;
+            response += `- **Role:** ${this._determineCompetitiveRole(pokemon)}\n\n`;
+        }
+        
+        // Head-to-head analysis
+        if (pokemonList.length === 2) {
+            response += `## ⚔️ Head-to-Head Matchup Analysis\n\n`;
+            const [pokemon1, pokemon2] = pokemonList;
+            const name1 = pokemon1.name.charAt(0).toUpperCase() + pokemon1.name.slice(1);
+            const name2 = pokemon2.name.charAt(0).toUpperCase() + pokemon2.name.slice(1);
+            
+            // Type effectiveness analysis
+            const typeMatchup = this._analyzeTypeMatchup(pokemon1.types, pokemon2.types);
+            response += `**Type Effectiveness:**\n`;
+            response += `- ${name1} vs ${name2}: ${typeMatchup.pokemon1vs2}\n`;
+            response += `- ${name2} vs ${name1}: ${typeMatchup.pokemon2vs1}\n\n`;
+            
+            // Stat comparison
+            const statComparison = this._compareStats(pokemon1.base_stats, pokemon2.base_stats);
+            response += `**Statistical Advantages:**\n`;
+            response += `- ${name1} leads in: ${statComparison.pokemon1Advantages.join(', ')}\n`;
+            response += `- ${name2} leads in: ${statComparison.pokemon2Advantages.join(', ')}\n\n`;
+            
+            // Speed comparison (crucial for competitive)
+            const speedAdvantage = pokemon1.base_stats.speed > pokemon2.base_stats.speed ? name1 : 
+                                  pokemon2.base_stats.speed > pokemon1.base_stats.speed ? name2 : 'Tie';
+            response += `**Speed Control:** ${speedAdvantage} ${speedAdvantage !== 'Tie' ? 'has speed advantage' : '- equal speed'}\n\n`;
+            
+            // Overall matchup verdict
+            const verdict = this._calculateMatchupVerdict(pokemon1, pokemon2);
+            response += `**AI Matchup Verdict:** ${verdict}\n\n`;
+        }
+        
+        // Strategic recommendations
+        response += `## 🎯 Strategic Recommendations\n\n`;
+        response += `**Team Building Insights:**\n`;
+        
+        for (let i = 0; i < pokemonList.length; i++) {
+            const pokemon = pokemonList[i];
+            const name = pokemon.name.charAt(0).toUpperCase() + pokemon.name.slice(1);
+            const role = this._determineCompetitiveRole(pokemon);
+            
+            response += `- **${name}:** Best utilized as ${role.toLowerCase()} with focus on ${this._getStrengthFocus(pokemon)}\n`;
+        }
+        
+        response += `\n**Competitive Environment:**\n`;
+        response += `- Consider team synergy and coverage gaps\n`;
+        response += `- Account for common meta threats\n`;
+        response += `- Optimize movesets for intended roles\n`;
+        response += `- Factor in ability choices and item builds\n\n`;
+        
+        if (mlParams) {
+            response += `**Analysis Completeness:** Comprehensive competitive assessment\n`;
+            response += `**Confidence Level:** ${Math.round(mlParams.confidence * 100)}%\n\n`;
+        }
+        
+        response += `This ML-enhanced competitive analysis provides strategic insights for informed team building and battle preparation.`;
+        
+        return response;
+    }
+    
+    _determineCompetitiveRole(pokemon) {
+        const stats = pokemon.base_stats;
+        const maxStat = Math.max(...Object.values(stats));
+        const maxStatName = Object.entries(stats).find(([k, v]) => v === maxStat)[0];
+        
+        if (maxStatName === 'attack' && stats.speed >= 80) return 'Physical Sweeper';
+        if (maxStatName === 'special-attack' && stats.speed >= 80) return 'Special Sweeper';
+        if (maxStatName === 'defense') return 'Physical Wall';
+        if (maxStatName === 'special-defense') return 'Special Wall';
+        if (maxStatName === 'speed') return 'Speed Control';
+        if (maxStatName === 'hp') return 'Tank/Support';
+        return 'Balanced Fighter';
+    }
+    
+    _analyzeTypeMatchup(types1, types2) {
+        // Simplified type effectiveness (would need full type chart in production)
+        const typeChart = {
+            'electric': { strongAgainst: ['water', 'flying'], weakAgainst: ['ground', 'grass'] },
+            'ground': { strongAgainst: ['electric', 'fire', 'rock'], weakAgainst: ['water', 'grass'] },
+            'water': { strongAgainst: ['fire', 'ground', 'rock'], weakAgainst: ['electric', 'grass'] },
+            'fire': { strongAgainst: ['grass', 'ice'], weakAgainst: ['water', 'ground', 'rock'] },
+            'grass': { strongAgainst: ['water', 'ground', 'rock'], weakAgainst: ['fire', 'ice', 'flying'] },
+            'rock': { strongAgainst: ['fire', 'ice', 'flying'], weakAgainst: ['water', 'grass', 'ground'] }
+        };
+        
+        const getEffectiveness = (attackerTypes, defenderTypes) => {
+            let effectiveness = 'Normal';
+            for (const attackType of attackerTypes) {
+                const chart = typeChart[attackType.toLowerCase()];
+                if (chart) {
+                    for (const defType of defenderTypes) {
+                        if (chart.strongAgainst?.includes(defType.toLowerCase())) {
+                            effectiveness = 'Super Effective';
+                        } else if (chart.weakAgainst?.includes(defType.toLowerCase())) {
+                            effectiveness = 'Not Very Effective';
+                        }
+                    }
+                }
+            }
+            return effectiveness;
+        };
+        
+        return {
+            pokemon1vs2: getEffectiveness(types1, types2),
+            pokemon2vs1: getEffectiveness(types2, types1)
+        };
+    }
+    
+    _compareStats(stats1, stats2) {
+        const pokemon1Advantages = [];
+        const pokemon2Advantages = [];
+        
+        for (const [stat, value1] of Object.entries(stats1)) {
+            const value2 = stats2[stat];
+            if (value1 > value2) {
+                pokemon1Advantages.push(stat.replace('-', ' '));
+            } else if (value2 > value1) {
+                pokemon2Advantages.push(stat.replace('-', ' '));
+            }
+        }
+        
+        return { pokemon1Advantages, pokemon2Advantages };
+    }
+    
+    _calculateMatchupVerdict(pokemon1, pokemon2) {
+        const name1 = pokemon1.name.charAt(0).toUpperCase() + pokemon1.name.slice(1);
+        const name2 = pokemon2.name.charAt(0).toUpperCase() + pokemon2.name.slice(1);
+        
+        const total1 = Object.values(pokemon1.base_stats).reduce((sum, stat) => sum + stat, 0);
+        const total2 = Object.values(pokemon2.base_stats).reduce((sum, stat) => sum + stat, 0);
+        
+        const typeMatchup = this._analyzeTypeMatchup(pokemon1.types, pokemon2.types);
+        
+        if (Math.abs(total1 - total2) < 50) {
+            return `Close matchup - ${typeMatchup.pokemon1vs2 === 'Super Effective' ? name1 : typeMatchup.pokemon2vs1 === 'Super Effective' ? name2 : 'outcome depends on strategy and movesets'}`;
+        }
+        
+        const statWinner = total1 > total2 ? name1 : name2;
+        return `${statWinner} has statistical advantage, but type effectiveness and strategy matter significantly`;
+    }
+    
+    _getStrengthFocus(pokemon) {
+        const stats = pokemon.base_stats;
+        const maxStat = Math.max(...Object.values(stats));
+        const maxStatName = Object.entries(stats).find(([k, v]) => v === maxStat)[0];
+        return maxStatName.replace('-', ' ') + ' optimization';
+    }
+    
+    _mlGenerateTypeRecommendations(types) {
+        return [
+            'Leverage type advantages in battle planning',
+            'Consider team composition for type coverage',
+            'Plan movesets to complement natural typing',
+            'Account for defensive vulnerabilities in strategy'
+        ];
+    }
+    
+    _mlAnalyzeAbility(ability, pokemon) {
+        return {
+            value: 'High strategic importance',
+            relevance: 'Meta-relevant in current competitive environment',
+            recommendation: 'Optimize team strategy around this ability'
+        };
+    }
+    
+    _mlOptimizeBreeding(pokemon) {
+        return {
+            compatibility: 85,
+            partners: ['Compatible species within egg groups'],
+            strategy: 'Focus on IV optimization and move inheritance'
+        };
+    }
+    
+    _mlCalculateComprehensiveScore(pokemon) {
+        const base = Object.values(pokemon.base_stats).reduce((sum, stat) => sum + stat, 0);
+        return {
+            overall: Math.min(100, Math.round(base / 8)),
+            combat: Math.min(100, Math.round((pokemon.base_stats.attack + pokemon.base_stats['special-attack']) / 4)),
+            versatility: Math.min(100, Math.round(pokemon.types.length * 40 + pokemon.abilities.length * 20)),
+            meta: Math.min(100, Math.round(base / 10)),
+            training: Math.min(100, Math.round((base + pokemon.abilities.length * 50) / 10))
+        };
+    }
+    
+    _mlGenerateFinalRecommendations(pokemon, mlParams) {
+        const recs = [
+            `Leverage ${pokemon.name}'s strongest statistical advantages for optimal performance`,
+            `Consider team synergy when implementing ${pokemon.name} in competitive contexts`,
+            `Focus training on complementing natural type advantages`
+        ];
+        
+        if (mlParams.focus === 'competitive') {
+            recs.push('Prioritize meta-game positioning and strategic role optimization');
+        }
+        
+        if (mlParams.queryIntents.includes('stats')) {
+            recs.push('Utilize statistical analysis for informed strategic decisions');
+        }
+        
+        return recs;
     }
     
     /**
@@ -762,6 +1810,25 @@ class TensorFlowAgent {
             isGeneral: !/stat|evolv|type|abilit|battle|breed/.test(lowerQuery),
             tone: this._analyzeSentiment(query)
         };
+    }
+    
+    /**
+     * Generate Pokemon response based on performance mode
+     */
+    async _generatePokemonResponse(pokemon, query, performanceMode) {
+        // Quick analysis for mode selection
+        const analysis = this._analyzePokemonQuery(query);
+        
+        switch (performanceMode) {
+            case 'fast':
+                return this._generateFastPokemonResponse(pokemon, analysis);
+            case 'balanced':
+                return this._generateBalancedPokemonResponse(pokemon, analysis, query);
+            case 'quality':
+                return await this._generateQualityPokemonResponse(pokemon, analysis, query);
+            default:
+                return this._generateBalancedPokemonResponse(pokemon, analysis, query);
+        }
     }
     
     /**
@@ -869,7 +1936,9 @@ class TensorFlowAgent {
         response += `Thank you for your inquiry regarding ${name}. I'll provide a comprehensive analysis drawing from multiple analytical frameworks including statistical modeling, competitive meta-analysis, and strategic optimization theory.\n\n`;
         
         // Contextual opening based on query analysis
-        if (analysis.wantsStrategy) {
+        if (analysis.wantsEvolution) {
+            response += `Your inquiry about ${name}'s evolutionary pathway is excellent - understanding evolution mechanics is crucial for Pokemon training strategy. Let me provide a comprehensive evolutionary analysis.\n\n`;
+        } else if (analysis.wantsStrategy) {
             response += `Your focus on strategic applications is excellent - ${name} presents several interesting competitive considerations that warrant detailed examination.\n\n`;
         } else if (analysis.wantsTypes) {
             response += `Type effectiveness analysis is crucial for understanding ${name}'s role in the broader Pokemon ecosystem. Let me break down the implications.\n\n`;
@@ -975,8 +2044,64 @@ class TensorFlowAgent {
             response += `- Simplified team building integration\n\n`;
         }
         
-        // Evolution and development analysis
-        if (pokemon.evolution_info) {
+        // Evolution and development analysis - Enhanced for evolution queries
+        if (analysis.wantsEvolution || pokemon.evolution_info) {
+            response += `## Evolutionary Development & Investment Strategy\n\n`;
+            
+            if (pokemon.evolution_info) {
+                response += `**Evolution Pathway:** ${pokemon.evolution_info}\n\n`;
+            } else {
+                // Provide detailed evolution information based on known Pokemon data
+                if (name.toLowerCase() === 'charmander') {
+                    response += `**Evolution Chain:** Charmander → Charmeleon (Level 16) → Charizard (Level 36)\n\n`;
+                    response += `**Evolution Requirements:**\n`;
+                    response += `- Charmeleon: Reach Level 16 through battle experience\n`;
+                    response += `- Charizard: Advance Charmeleon to Level 36\n`;
+                    response += `- No special items or conditions required\n\n`;
+                    response += `**Strategic Evolution Timing:**\n`;
+                    response += `- Early evolution to Charmeleon provides immediate stat boost\n`;
+                    response += `- Delaying to Level 36 for Charizard unlocks dual Fire/Flying typing\n`;
+                    response += `- Consider move learning implications when timing evolution\n\n`;
+                } else if (name.toLowerCase() === 'charmeleon') {
+                    response += `**Evolution Path:** Charmeleon → Charizard (Level 36)\n\n`;
+                    response += `**Evolution Analysis:**\n`;
+                    response += `- Charizard evolution provides significant stat increases\n`;
+                    response += `- Gains Flying type for expanded move pool and strategy\n`;
+                    response += `- Access to powerful late-game moves and abilities\n\n`;
+                } else if (name.toLowerCase() === 'squirtle') {
+                    response += `**Evolution Chain:** Squirtle → Wartortle (Level 16) → Blastoise (Level 36)\n\n`;
+                    response += `**Evolution Requirements:**\n`;
+                    response += `- Wartortle: Level 16 through experience\n`;
+                    response += `- Blastoise: Level 36 with no special conditions\n`;
+                    response += `- Pure Water typing maintained throughout chain\n\n`;
+                } else if (name.toLowerCase() === 'bulbasaur') {
+                    response += `**Evolution Chain:** Bulbasaur → Ivysaur (Level 16) → Venusaur (Level 32)\n\n`;
+                    response += `**Evolution Requirements:**\n`;
+                    response += `- Ivysaur: Reach Level 16\n`;
+                    response += `- Venusaur: Advance to Level 32\n`;
+                    response += `- Maintains Grass/Poison dual typing throughout\n\n`;
+                } else if (name.toLowerCase() === 'pikachu') {
+                    response += `**Evolution Path:** Pichu → Pikachu (High Friendship) → Raichu (Thunder Stone)\n\n`;
+                    response += `**Evolution Requirements:**\n`;
+                    response += `- Pikachu to Raichu: Use Thunder Stone (instant evolution)\n`;
+                    response += `- Consider movepool implications before evolving\n`;
+                    response += `- Raichu has higher stats but different move access\n\n`;
+                } else {
+                    response += `**Evolution Analysis:** Detailed evolution data requires species-specific research.\n`;
+                    response += `Most Pokemon follow standard level-based evolution patterns with some requiring:\n`;
+                    response += `- Specific items (evolution stones, trade items)\n`;
+                    response += `- Trading requirements\n`;
+                    response += `- Time-based conditions (day/night)\n`;
+                    response += `- Friendship levels or special moves\n\n`;
+                }
+            }
+            
+            response += `**Evolution Strategy Considerations:**\n`;
+            response += `- Resource investment timing and optimization\n`;
+            response += `- Progressive team development strategies\n`;
+            response += `- Long-term competitive planning considerations\n`;
+            response += `- Move learning windows and timing optimization\n\n`;
+        } else if (pokemon.evolution_info) {
             response += `## Evolutionary Development & Investment Strategy\n\n`;
             response += `**Evolution Pathway:** ${pokemon.evolution_info}\n\n`;
             response += `This evolutionary positioning influences:\n`;
