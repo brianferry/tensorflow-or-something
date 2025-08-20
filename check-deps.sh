@@ -4,6 +4,16 @@
 echo "🔍 TensorFlow.js Agent Service - Dependency Check"
 echo "=================================================="
 
+# Initialize Node.js environment (for nvm users)
+if [ -f "$HOME/.nvm/nvm.sh" ]; then
+    source "$HOME/.nvm/nvm.sh"
+    nvm use node > /dev/null 2>&1
+fi
+
+# Add common Node.js paths to PATH
+export PATH="$HOME/.nvm/versions/node/v22.17.1/bin:$PATH"
+export PATH="/usr/local/bin:$PATH"
+
 echo "📋 Node.js Version:"
 node --version
 

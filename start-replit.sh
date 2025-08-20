@@ -3,6 +3,30 @@
 # Replit startup script for TensorFlow.js Agent Service
 echo "🚀 Starting TensorFlow.js Agent Service on Replit..."
 
+# Initialize Node.js environment (for nvm users)
+if [ -f "$HOME/.nvm/nvm.sh" ]; then
+    echo "🔧 Loading Node.js environment..."
+    source "$HOME/.nvm/nvm.sh"
+    nvm use node
+fi
+
+# Add common Node.js paths to PATH
+export PATH="$HOME/.nvm/versions/node/v22.17.1/bin:$PATH"
+export PATH="/usr/local/bin:$PATH"
+
+# Verify node and npm are available
+if ! command -v node > /dev/null 2>&1; then
+    echo "❌ Node.js not found. Please install Node.js first."
+    exit 1
+fi
+
+if ! command -v npm > /dev/null 2>&1; then
+    echo "❌ npm not found. Please install npm first."
+    exit 1
+fi
+
+echo "✅ Node.js $(node --version) and npm $(npm --version) ready"
+
 # Always install/update dependencies to ensure all packages are available
 echo "📥 Installing/updating dependencies..."
 npm install

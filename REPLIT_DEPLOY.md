@@ -91,6 +91,23 @@ curl -X POST https://your-repl-name.your-username.repl.co/run_task/ \
 
 ### Common Issues
 
+**"npm: command not found" or Node.js environment issues**
+```bash
+# The startup script now automatically handles this, but if you see this error:
+
+# Solution 1: Use the enhanced startup script (recommended)
+./start-replit.sh
+
+# Solution 2: Manually initialize Node.js environment
+source ~/.nvm/nvm.sh
+nvm use node
+npm install
+npm start
+
+# Solution 3: Check your environment
+./check-deps.sh
+```
+
 **"Cannot find module 'morgan'" or other dependencies**
 ```bash
 # Solution 1: Force reinstall dependencies
