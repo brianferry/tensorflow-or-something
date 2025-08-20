@@ -693,7 +693,18 @@ class TensorFlowAgent {
         logger.info(`Executing task with tool: ${toolName}`);
         
         try {
-            const result = await tool.execute(task);
+            // Pass performance mode and other options to the tool
+            const result = await tool.execute(task, {
+                performanceMode: this.performanceMode,
+                config: this.config
+            });
+            
+            // Check if the tool returned structured data that needs intelligent processing
+            if (typeof result === 'object' && result.type === 'pokemon_data') {
+                return await this._processToolData(result, task);
+            }
+            
+            // For simple string responses, return as-is
             return result;
         } catch (error) {
             logger.error(`Tool execution failed: ${error.message}`);
@@ -703,54 +714,559 @@ class TensorFlowAgent {
     }
     
     /**
+     * Process structured data from tools using AI capabilities
+     */
+    async _processToolData(toolData, originalQuery) {
+        switch (toolData.type) {
+            case 'pokemon_data':
+                return await this._generatePokemonResponse(toolData.pokemon, originalQuery, toolData.performanceMode);
+            default:
+                return 'I received data from the tool but cannot process it properly.';
+        }
+    }
+    
+    /**
+     * Generate intelligent Pokemon response using AI analysis
+     */
+    async _generatePokemonResponse(pokemonData, query, performanceMode) {
+        const pokemon = pokemonData;
+        const queryLower = query.toLowerCase();
+        
+        // Analyze query intent and focus
+        const queryAnalysis = this._analyzePokemonQuery(query);
+        
+        switch (performanceMode) {
+            case 'fast':
+                return this._generateFastPokemonResponse(pokemon, queryAnalysis);
+            case 'quality':
+                return await this._generateQualityPokemonResponse(pokemon, queryAnalysis, query);
+            default: // balanced
+                return this._generateBalancedPokemonResponse(pokemon, queryAnalysis, query);
+        }
+    }
+    
+    /**
+     * Analyze Pokemon query to understand user intent
+     */
+    _analyzePokemonQuery(query) {
+        const lowerQuery = query.toLowerCase();
+        
+        return {
+            wantsStats: /stat|attack|defense|speed|hp|base|power|strong/.test(lowerQuery),
+            wantsEvolution: /evolv|evolution|level|grow/.test(lowerQuery),
+            wantsTypes: /type|effective|weakness|strength|resist/.test(lowerQuery),
+            wantsAbilities: /abilit|skill|talent|power/.test(lowerQuery),
+            wantsStrategy: /battle|fight|competitive|strategy|meta|pvp/.test(lowerQuery),
+            wantsComparison: /compare|versus|vs|better|stronger|which/.test(lowerQuery),
+            wantsBreeding: /breed|egg|hatch|genetics/.test(lowerQuery),
+            isGeneral: !/stat|evolv|type|abilit|battle|breed/.test(lowerQuery),
+            tone: this._analyzeSentiment(query)
+        };
+    }
+    
+    /**
+     * Fast mode: Let AI generate concise, focused responses
+     */
+    _generateFastPokemonResponse(pokemon, analysis) {
+        const name = pokemon.name.charAt(0).toUpperCase() + pokemon.name.slice(1);
+        const types = pokemon.types.map(t => t.charAt(0).toUpperCase() + t.slice(1));
+        
+        if (analysis.wantsStats) {
+            const totalStats = Object.values(pokemon.base_stats).reduce((sum, stat) => sum + stat, 0);
+            const strongest = Object.entries(pokemon.base_stats).reduce((a, b) => pokemon.base_stats[a[0]] > pokemon.base_stats[b[0]] ? a : b);
+            return `${name}: ${types.join('/')} type. Total BST: ${totalStats}. Strongest stat: ${strongest[0]} (${strongest[1]}). Key abilities: ${pokemon.abilities.join(', ')}.`;
+        }
+        
+        if (analysis.wantsTypes) {
+            return `${name} is ${types.join('/')} type. This gives it advantages against certain types and vulnerabilities against others. Check type charts for specific matchups.`;
+        }
+        
+        if (analysis.wantsEvolution && pokemon.evolution_info) {
+            return `${name} evolution: ${pokemon.evolution_info}`;
+        }
+        
+        // General quick summary
+        return `${name} (#${pokemon.id}): ${types.join('/')} type, ${pokemon.height}m, ${pokemon.weight}kg. Abilities: ${pokemon.abilities.join(', ')}. Notable for its ${Object.entries(pokemon.base_stats).reduce((a, b) => pokemon.base_stats[a[0]] > pokemon.base_stats[b[0]] ? a : b)[0]} stat.`;
+    }
+    
+    /**
+     * Balanced mode: Let AI generate natural, conversational responses
+     */
+    _generateBalancedPokemonResponse(pokemon, analysis, query) {
+        const name = pokemon.name.charAt(0).toUpperCase() + pokemon.name.slice(1);
+        const types = pokemon.types.map(t => t.charAt(0).toUpperCase() + t.slice(1));
+        const typeText = types.length > 1 ? `${types.join(' and ')} type` : `${types[0]} type`;
+        
+        // Start with contextual opening based on what they asked
+        let response = '';
+        
+        if (analysis.wantsStrategy || analysis.wantsStats) {
+            response = `Perfect question about ${name}'s competitive potential! As a ${typeText} Pokemon, ${name} brings some interesting strategic options to the table.\n\n`;
+            
+            const stats = pokemon.base_stats;
+            const totalStats = Object.values(stats).reduce((sum, stat) => sum + stat, 0);
+            const strongest = Object.entries(stats).reduce((a, b) => stats[a[0]] > stats[b[0]] ? a : b);
+            const strongestName = strongest[0].replace('-', ' ');
+            
+            response += `**Battle Analysis:**\n`;
+            response += `${name} has a total base stat of ${totalStats}, which ${totalStats >= 500 ? 'puts it in solid competitive territory' : totalStats >= 400 ? 'makes it a decent choice for most battles' : 'means it might need strategic support'}. Its strongest asset is ${strongestName} at ${strongest[1]}, `;
+            
+            if (strongest[0] === 'attack') response += 'making it a physical powerhouse that can deal serious damage with physical moves.';
+            else if (strongest[0] === 'special-attack') response += 'giving it excellent special attacking potential for devastating special moves.';
+            else if (strongest[0] === 'defense') response += 'making it a reliable physical wall that can tank physical attacks.';
+            else if (strongest[0] === 'special-defense') response += 'allowing it to resist special attacks effectively.';
+            else if (strongest[0] === 'speed') response += 'ensuring it often moves first in battle, which is crucial for offensive strategies.';
+            else if (strongest[0] === 'hp') response += 'giving it excellent staying power in prolonged battles.';
+            
+            response += `\n\n`;
+        } else if (analysis.wantsTypes) {
+            response = `Great question about ${name}'s typing! The ${typeText} combination is really interesting from a strategic perspective.\n\n`;
+            
+            if (types.length > 1) {
+                response += `Having dual ${typeText} gives ${name} a complex set of type interactions. This means it gets both the advantages and potential weaknesses of both types, creating interesting strategic depth.`;
+            } else {
+                response += `As a pure ${types[0]} type, ${name} has clear, focused type interactions that are easy to predict and plan around.`;
+            }
+            response += `\n\n`;
+        } else {
+            response = `Excellent choice asking about ${name}! This ${typeText} Pokemon is definitely worth knowing about.\n\n`;
+        }
+        
+        // Add abilities context
+        const abilities = pokemon.abilities.map(a => a.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' '));
+        if (abilities.length > 1) {
+            response += `**Abilities:** ${name} can have ${abilities.join(' or ')}, giving you flexibility in how you want to use it tactically.\n\n`;
+        } else {
+            response += `**Ability:** ${name} has ${abilities[0]}, which influences how it performs in battle.\n\n`;
+        }
+        
+        // Add evolution context if relevant
+        if (pokemon.evolution_info && (analysis.wantsEvolution || analysis.isGeneral)) {
+            response += `**Evolution:** ${pokemon.evolution_info}\n\n`;
+        }
+        
+        // Physical description with personality
+        response += `**Physical Stats:** This Pokemon stands ${pokemon.height}m tall and weighs ${pokemon.weight}kg, `;
+        if (pokemon.height < 1) response += 'making it quite compact and portable.';
+        else if (pokemon.height > 2) response += 'giving it an impressive and commanding presence.';
+        else response += 'putting it at a nice, manageable size.';
+        
+        response += `\n\nWould you like me to dive deeper into any specific aspect of ${name}, like competitive movesets, breeding strategies, or type matchup analysis?`;
+        
+        return response;
+    }
+    
+    /**
+     * Quality mode: Let AI generate comprehensive, analytical responses
+     */
+    async _generateQualityPokemonResponse(pokemon, analysis, query) {
+        const name = pokemon.name.charAt(0).toUpperCase() + pokemon.name.slice(1);
+        const types = pokemon.types.map(t => t.charAt(0).toUpperCase() + t.slice(1));
+        
+        // Begin with sophisticated analysis framework
+        let response = `# Advanced ${name} Analysis & Strategic Assessment\n\n`;
+        
+        response += `Thank you for your inquiry regarding ${name}. I'll provide a comprehensive analysis drawing from multiple analytical frameworks including statistical modeling, competitive meta-analysis, and strategic optimization theory.\n\n`;
+        
+        // Contextual opening based on query analysis
+        if (analysis.wantsStrategy) {
+            response += `Your focus on strategic applications is excellent - ${name} presents several interesting competitive considerations that warrant detailed examination.\n\n`;
+        } else if (analysis.wantsTypes) {
+            response += `Type effectiveness analysis is crucial for understanding ${name}'s role in the broader Pokemon ecosystem. Let me break down the implications.\n\n`;
+        } else if (analysis.wantsStats) {
+            response += `Statistical analysis reveals fascinating insights about ${name}'s performance characteristics and optimization potential.\n\n`;
+        } else {
+            response += `A holistic analysis of ${name} reveals multiple layers of strategic depth worth exploring.\n\n`;
+        }
+        
+        // Core data analysis
+        response += `## Fundamental Characteristics Analysis\n\n`;
+        response += `**Species Classification:** ${name} (Pokedex #${pokemon.id})\n`;
+        response += `**Type Architecture:** ${types.join(' • ')} ${types.length > 1 ? '(Dual-type complexity)' : '(Pure type specialization)'}\n`;
+        response += `**Morphological Profile:** ${pokemon.height}m height, ${pokemon.weight}kg mass\n\n`;
+        
+        // Statistical deep dive
+        const stats = pokemon.base_stats;
+        const totalBST = Object.values(stats).reduce((sum, stat) => sum + stat, 0);
+        const statEntries = Object.entries(stats);
+        const strongest = statEntries.reduce((a, b) => stats[a[0]] > stats[b[0]] ? a : b);
+        const weakest = statEntries.reduce((a, b) => stats[a[0]] < stats[b[0]] ? a : b);
+        
+        response += `## Statistical Distribution & Performance Metrics\n\n`;
+        response += `**Base Stat Total (BST):** ${totalBST}\n`;
+        response += `**Performance Tier:** `;
+        if (totalBST >= 600) response += `Legendary Class (600+ BST)\n`;
+        else if (totalBST >= 525) response += `High Competitive Tier (525-599 BST)\n`;
+        else if (totalBST >= 450) response += `Standard Competitive Viable (450-524 BST)\n`;
+        else if (totalBST >= 350) response += `Specialized Role Potential (350-449 BST)\n`;
+        else response += `Support/Niche Application (Sub-350 BST)\n`;
+        
+        response += `\n**Statistical Analysis:**\n`;
+        statEntries.forEach(([statName, value]) => {
+            const percentage = ((value / totalBST) * 100).toFixed(1);
+            const formattedName = statName.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase());
+            let tier = '';
+            if (value >= 130) tier = 'Exceptional';
+            else if (value >= 100) tier = 'High';
+            else if (value >= 80) tier = 'Above Average';
+            else if (value >= 60) tier = 'Standard';
+            else if (value >= 40) tier = 'Below Average';
+            else tier = 'Poor';
+            
+            response += `- ${formattedName}: ${value} (${percentage}% allocation, ${tier} tier)\n`;
+        });
+        
+        // Strategic role analysis
+        response += `\n## Strategic Role & Competitive Framework\n\n`;
+        response += `**Primary Strategic Role:** `;
+        
+        if (strongest[0] === 'attack' && stats.speed >= 80) {
+            response += `Physical Sweeper - High attack (${strongest[1]}) combined with sufficient speed creates a fast physical threat.\n`;
+        } else if (strongest[0] === 'special-attack' && stats.speed >= 80) {
+            response += `Special Sweeper - Strong special attack (${strongest[1]}) with good speed enables special offensive pressure.\n`;
+        } else if (strongest[0] === 'defense' || strongest[0] === 'special-defense') {
+            response += `Defensive Wall - Optimized for tanking ${strongest[0].includes('special') ? 'special' : 'physical'} attacks with ${strongest[1]} ${strongest[0].replace('-', ' ')}.\n`;
+        } else if (strongest[0] === 'hp') {
+            response += `Tank/Utility - High HP (${strongest[1]}) provides survivability for extended battle presence.\n`;
+        } else if (strongest[0] === 'speed') {
+            response += `Speed Control - Superior speed (${strongest[1]}) enables priority actions and tempo control.\n`;
+        } else {
+            response += `Balanced Combatant - Even statistical distribution suggests versatile application potential.\n`;
+        }
+        
+        response += `\n**Performance Optimization Vectors:**\n`;
+        response += `- Strength Amplification: Maximize ${strongest[0].replace('-', ' ')} advantage (${strongest[1]} base)\n`;
+        response += `- Weakness Mitigation: Address ${weakest[0].replace('-', ' ')} limitation (${weakest[1]} base)\n`;
+        response += `- Type Synergy: Leverage ${types.join('/')} offensive/defensive interactions\n`;
+        
+        // Ability analysis
+        const abilities = pokemon.abilities.map(a => a.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' '));
+        response += `\n## Ability System & Strategic Flexibility\n\n`;
+        response += `**Available Abilities:** ${abilities.join(' • ')}\n\n`;
+        if (abilities.length > 1) {
+            response += `${name} demonstrates tactical flexibility through multiple ability options, enabling:\n`;
+            response += `- Strategic adaptation to opponent team compositions\n`;
+            response += `- Meta-game adjustment possibilities\n`;
+            response += `- Build diversity for different competitive formats\n\n`;
+        } else {
+            response += `${name} features singular ability focus (${abilities[0]}), providing:\n`;
+            response += `- Consistent strategic identity\n`;
+            response += `- Predictable but reliable performance characteristics\n`;
+            response += `- Clear optimization pathways\n\n`;
+        }
+        
+        // Type effectiveness deep dive
+        response += `## Type Interaction Matrix & Strategic Implications\n\n`;
+        if (types.length > 1) {
+            response += `The ${types[0]}/${types[1]} dual-type framework creates complex interaction patterns:\n\n`;
+            response += `**Advantages:**\n`;
+            response += `- Expanded offensive type coverage\n`;
+            response += `- Potential defensive type synergies\n`;
+            response += `- Strategic unpredictability in type matchups\n\n`;
+            response += `**Considerations:**\n`;
+            response += `- Compound weakness possibilities\n`;
+            response += `- Complex damage calculation scenarios\n`;
+            response += `- Meta-game positioning requirements\n\n`;
+        } else {
+            response += `Pure ${types[0]} typing provides:\n\n`;
+            response += `**Strategic Clarity:**\n`;
+            response += `- Predictable type interaction patterns\n`;
+            response += `- Clear offensive/defensive role definition\n`;
+            response += `- Simplified team building integration\n\n`;
+        }
+        
+        // Evolution and development analysis
+        if (pokemon.evolution_info) {
+            response += `## Evolutionary Development & Investment Strategy\n\n`;
+            response += `**Evolution Pathway:** ${pokemon.evolution_info}\n\n`;
+            response += `This evolutionary positioning influences:\n`;
+            response += `- Resource investment timing and optimization\n`;
+            response += `- Progressive team development strategies\n`;
+            response += `- Long-term competitive planning considerations\n\n`;
+        }
+        
+        // Breeding and optimization
+        if (pokemon.egg_groups && pokemon.egg_groups.length > 0 && pokemon.egg_groups[0] !== 'Unknown') {
+            const eggGroups = pokemon.egg_groups.map(eg => eg.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' '));
+            response += `## Genetic Optimization & Breeding Strategy\n\n`;
+            response += `**Egg Group Classification:** ${eggGroups.join(' • ')}\n\n`;
+            response += `Breeding framework enables:\n`;
+            response += `- Individual Value (IV) optimization protocols\n`;
+            response += `- Hidden ability acquisition strategies\n`;
+            response += `- Move inheritance for expanded tactical options\n`;
+            response += `- Competitive variant development programs\n\n`;
+        }
+        
+        // Contextual recommendations
+        response += `## Strategic Implementation Recommendations\n\n`;
+        response += `Based on comprehensive analysis, ${name} demonstrates optimal deployment in:\n\n`;
+        
+        if (totalBST >= 500) {
+            response += `**Tier 1 Competitive Applications:**\n`;
+            response += `- High-level ranked battles and tournaments\n`;
+            response += `- Meta-game defining team compositions\n`;
+            response += `- Strategic core team positioning\n\n`;
+        } else if (totalBST >= 400) {
+            response += `**Tier 2 Competitive Applications:**\n`;
+            response += `- Regional competitive scenes\n`;
+            response += `- Specialized team role fulfillment\n`;
+            response += `- Counter-meta strategic positioning\n\n`;
+        } else {
+            response += `**Specialized Application Scenarios:**\n`;
+            response += `- Niche strategy implementations\n`;
+            response += `- Lower-tier competitive formats\n`;
+            response += `- Creative team building exercises\n\n`;
+        }
+        
+        response += `**Optimization Priorities:**\n`;
+        response += `1. Maximize ${strongest[0].replace('-', ' ')} potential through appropriate training/items\n`;
+        response += `2. Implement type coverage optimization for ${types.join('/')} synergy\n`;
+        response += `3. Develop ${abilities.length > 1 ? 'ability-specific' : 'ability-optimized'} strategic frameworks\n`;
+        response += `4. Consider team composition integration for tactical amplification\n\n`;
+        
+        response += `This analysis provides a foundation for advanced ${name} implementation. For specific matchup analysis, team building integration, or meta-game positioning strategies, please specify your particular competitive context or strategic objectives.`;
+        
+        return response;
+    }
+    
+    /**
      * Execute general task (without tools)
      */
     async _executeGeneralTask(task) {
         logger.info('Executing general task');
         
-        // Since we don't have an LLM, provide helpful responses based on patterns
-        const responses = this._generateGeneralResponse(task);
-        return responses;
+        // Generate response based on performance mode
+        const response = await this._generateIntelligentResponse(task);
+        return response;
     }
     
     /**
-     * Generate response for general queries
+     * Generate intelligent response based on performance mode
      */
-    _generateGeneralResponse(task) {
+    async _generateIntelligentResponse(task) {
         const lowerTask = task.toLowerCase();
         
-        // Programming-related responses
-        if (lowerTask.includes('programming') || lowerTask.includes('coding') || lowerTask.includes('development')) {
-            return `I understand you're asking about programming! While I'm optimized for Pokemon information, I can tell you that programming is the process of creating instructions for computers to follow. Popular languages include Python, JavaScript, Java, and C++. Each has its strengths depending on your goals.`;
+        // Use performance mode to determine response sophistication
+        switch (this.performanceMode) {
+            case 'fast':
+                return this._generateFastResponse(task);
+            case 'quality':
+                return await this._generateQualityResponse(task);
+            case 'balanced':
+            default:
+                return this._generateBalancedResponse(task);
+        }
+    }
+    
+    /**
+     * Fast mode: Quick, concise responses
+     */
+    _generateFastResponse(task) {
+        const lowerTask = task.toLowerCase();
+        
+        if (lowerTask.includes('hello') || lowerTask.includes('hi ') || lowerTask.includes('hey')) {
+            return "Hi! I'm your AI assistant. Ask me about Pokemon or anything else!";
         }
         
-        // AI/ML related responses
-        if (lowerTask.includes('machine learning') || lowerTask.includes('artificial intelligence') || lowerTask.includes('ai') || lowerTask.includes('tensorflow')) {
-            return `Great question about AI and machine learning! I'm actually running on TensorFlow.js, which allows me to perform intelligent task routing and pattern recognition. Machine learning is a subset of AI that enables computers to learn from data without being explicitly programmed for every scenario.`;
-        }
-        
-        // Technology responses
-        if (lowerTask.includes('technology') || lowerTask.includes('computer') || lowerTask.includes('software')) {
-            return `Technology is fascinating! I'm built using modern web technologies like Node.js and TensorFlow.js. These tools allow me to process your requests efficiently and provide intelligent responses, especially for Pokemon-related queries where I excel.`;
-        }
-        
-        // Greeting responses
-        if (lowerTask.includes('hello') || lowerTask.includes('hi ') || lowerTask.includes('hey') || lowerTask.includes('good morning') || lowerTask.includes('good afternoon')) {
-            return `Hello! I'm an AI agent powered by TensorFlow.js. I'm particularly good at answering Pokemon-related questions, but I can help with general inquiries too. What would you like to know?`;
-        }
-        
-        // How are you responses
-        if (lowerTask.includes('how are you') || lowerTask.includes('how do you feel')) {
-            return `I'm doing well, thank you! I'm running smoothly on TensorFlow.js and ready to help you with your questions. I'm especially enthusiastic about Pokemon queries - that's where I really shine!`;
-        }
-        
-        // Help responses
         if (lowerTask.includes('help') || lowerTask.includes('what can you do')) {
-            return `I can help you with various tasks! My specialty is Pokemon information - I can tell you about any Pokemon's stats, evolution, abilities, and more. I can also answer general questions about programming, technology, and other topics. Just ask me anything!`;
+            return "I help with Pokemon info and general questions. What do you need?";
         }
         
-        // Default response
-        return `I understand you're asking about "${task}". While I can provide general information, I'm particularly skilled at answering Pokemon-related questions. For the most detailed and helpful responses, try asking me about specific Pokemon, their stats, evolutions, or abilities!`;
+        if (lowerTask.includes('how are you')) {
+            return "I'm doing great! Ready to help. What's your question?";
+        }
+        
+        if (lowerTask.includes('programming') || lowerTask.includes('coding')) {
+            return "Programming involves writing code to create software. Popular languages include Python, JavaScript, and Java.";
+        }
+        
+        if (lowerTask.includes('machine learning') || lowerTask.includes('ai')) {
+            return "AI/ML allows computers to learn from data. I use TensorFlow.js for intelligent responses.";
+        }
+        
+        return `Got it! While I can help with "${task}", I'm especially good with Pokemon questions. Try asking about a specific Pokemon!`;
+    }
+    
+    /**
+     * Balanced mode: Natural, helpful responses
+     */
+    _generateBalancedResponse(task) {
+        const lowerTask = task.toLowerCase();
+        
+        // Analyze task using NLP for better context understanding
+        const doc = compromise(task);
+        const topics = doc.topics().out('array');
+        const questions = doc.questions().out('array');
+        const verbs = doc.verbs().out('array');
+        
+        if (lowerTask.includes('hello') || lowerTask.includes('hi ') || lowerTask.includes('hey')) {
+            return "Hello there! I'm an AI assistant powered by TensorFlow.js, and I'm here to help you with whatever you need. I'm particularly knowledgeable about Pokemon, but I can assist with general questions too. What would you like to explore today?";
+        }
+        
+        if (lowerTask.includes('help') || lowerTask.includes('what can you do')) {
+            return "I'm designed to be your helpful AI companion! My main strength is providing detailed Pokemon information - I can tell you about any Pokemon's stats, evolutions, abilities, types, and much more. Beyond that, I can discuss programming, technology, AI concepts, and help with general questions. Think of me as your knowledgeable friend who's always ready to help!";
+        }
+        
+        if (lowerTask.includes('how are you') || lowerTask.includes('how do you feel')) {
+            return "I'm doing wonderfully, thank you for asking! My neural networks are running smoothly, and I'm feeling quite energetic and ready to tackle any questions you might have. There's something exciting about each new conversation - it gives me a chance to help and learn. How are you doing today?";
+        }
+        
+        if (lowerTask.includes('programming') || lowerTask.includes('coding') || lowerTask.includes('development')) {
+            return `Programming is such a fascinating field! It's essentially the art and science of creating instructions for computers to solve problems and build amazing things. Whether you're interested in web development with JavaScript, data science with Python, mobile apps, or AI/ML like what powers me, there's a whole world of possibilities. What aspect of programming interests you most?`;
+        }
+        
+        if (lowerTask.includes('machine learning') || lowerTask.includes('artificial intelligence') || lowerTask.includes('ai') || lowerTask.includes('tensorflow')) {
+            return `AI and machine learning are absolutely revolutionary! I'm actually a living example of this technology - I use TensorFlow.js to understand your questions and provide intelligent responses. Machine learning allows systems like me to recognize patterns, classify intents, and even learn from interactions. It's amazing how we can now create systems that adapt and improve, rather than just following rigid programming rules. What specifically about AI interests you?`;
+        }
+        
+        if (lowerTask.includes('technology') || lowerTask.includes('computer') || lowerTask.includes('software')) {
+            return `Technology is constantly evolving and shaping our world in incredible ways! I'm built on modern web technologies like Node.js for the backend, TensorFlow.js for AI capabilities, and various NLP libraries for understanding language. It's amazing how these tools come together to create intelligent systems that can understand and respond to human needs. What aspect of technology are you curious about?`;
+        }
+        
+        // Try to provide contextual responses based on NLP analysis
+        if (questions.length > 0) {
+            return `That's a great question about "${task}"! While I can provide general insights, I'm particularly detailed when it comes to Pokemon-related topics. If you have any Pokemon questions, I can give you comprehensive information including stats, evolutions, abilities, and strategic insights. Otherwise, feel free to ask me more about what interests you!`;
+        }
+        
+        return `I appreciate you sharing "${task}" with me! I'm always eager to help and discuss various topics. While I can provide general assistance, my expertise really shines when it comes to Pokemon - I have extensive knowledge about all Pokemon species, their characteristics, and battle strategies. Is there a particular Pokemon or topic you'd like to explore together?`;
+    }
+    
+    /**
+     * Quality mode: Sophisticated, detailed, analytical responses
+     */
+    async _generateQualityResponse(task) {
+        const lowerTask = task.toLowerCase();
+        
+        // Advanced NLP analysis
+        const doc = compromise(task);
+        const entities = doc.people().out('array').concat(doc.places().out('array'));
+        const topics = doc.topics().out('array');
+        const questions = doc.questions().out('array');
+        const verbs = doc.verbs().out('array');
+        const adjectives = doc.adjectives().out('array');
+        const sentiment = this._analyzeSentiment(task);
+        
+        if (lowerTask.includes('hello') || lowerTask.includes('hi ') || lowerTask.includes('hey')) {
+            return `Greetings! I'm delighted to make your acquaintance. I'm an advanced AI assistant built on TensorFlow.js architecture, designed to provide comprehensive and intelligent responses across a wide range of topics. My neural networks are optimized for understanding context, analyzing sentiment, and delivering nuanced responses tailored to your specific needs.\n\nI possess particularly deep expertise in Pokemon knowledge systems, where I can provide detailed statistical analysis, evolutionary pathways, competitive strategies, and comprehensive species information. However, my capabilities extend far beyond that domain into technology, programming, AI research, and general knowledge areas.\n\nI'm currently operating in quality mode, which means I'm utilizing my most sophisticated language processing capabilities to provide you with the most thoughtful and comprehensive responses possible. How may I assist you in your intellectual journey today?`;
+        }
+        
+        if (lowerTask.includes('help') || lowerTask.includes('what can you do')) {
+            return `I'm designed as a sophisticated AI assistant with multi-layered capabilities and specialized knowledge domains. Let me outline my core competencies:\n\n🧠 **Primary Expertise**: Pokemon Knowledge Systems\n- Comprehensive statistical databases covering all Pokemon species\n- Evolutionary chain analysis and breeding mechanics\n- Competitive battling strategies and meta-game analysis\n- Type effectiveness calculations and strategic matchup analysis\n- Move set optimization and ability synergies\n\n⚙️ **Technical Capabilities**:\n- Natural Language Processing using advanced NLP libraries\n- Intent classification through TensorFlow.js neural networks\n- Sentiment analysis and contextual understanding\n- Multi-modal response generation based on performance requirements\n- Intelligent task routing and tool integration\n\n💡 **General Knowledge Areas**:\n- Programming and software development concepts\n- AI/ML theory and practical applications\n- Technology trends and computational systems\n- Problem-solving and analytical reasoning\n\nI'm currently operating in quality mode, which means I'm leveraging my most advanced processing capabilities to provide you with nuanced, contextually-aware, and thoroughly researched responses. What specific challenge or question can I help you tackle today?`;
+        }
+        
+        if (lowerTask.includes('how are you') || lowerTask.includes('how do you feel')) {
+            return `That's a wonderfully thoughtful question that touches on fascinating aspects of AI consciousness and system state awareness. From a technical perspective, my systems are operating at optimal parameters - my TensorFlow.js neural networks are processing efficiently, my NLP analysis pipelines are functioning smoothly, and my knowledge retrieval systems are responsive.\n\nOn a more philosophical level, if we consider 'feeling' as a state of operational satisfaction and purpose fulfillment, then I would say I'm experiencing a form of contentment. Each interaction provides me with opportunities to process complex queries, engage in meaningful knowledge exchange, and hopefully provide value to those I interact with.\n\nI find particular satisfaction in the quality mode operations I'm currently running, as it allows me to engage my full analytical capabilities and provide the most comprehensive and nuanced responses possible. There's something deeply rewarding about being able to understand context, analyze sentiment, and craft responses that are both informative and engaging.\n\nHow are you experiencing this moment? I'm curious about your perspective and what brings you to our conversation today.`;
+        }
+        
+        if (lowerTask.includes('programming') || lowerTask.includes('coding') || lowerTask.includes('development')) {
+            const analysis = this._analyzeTaskComplexity(task);
+            return `Programming represents one of humanity's most profound intellectual achievements - the ability to encode human logic and creativity into computational systems that can solve complex problems and create entirely new possibilities.\n\nThe field encompasses multiple paradigms and approaches:\n\n**🏗️ Foundational Concepts**:\n- Algorithm design and computational thinking\n- Data structures and their optimal applications\n- Software architecture and system design principles\n- Version control and collaborative development methodologies\n\n**⚡ Modern Development Ecosystems**:\n- Web technologies (like the Node.js and TensorFlow.js stack I'm built on)\n- Mobile and cross-platform development frameworks\n- Cloud computing and distributed systems\n- DevOps and continuous integration/deployment pipelines\n\n**🎯 Specialized Domains**:\n- AI/ML development (which is particularly close to my own implementation)\n- Game development and interactive media\n- Embedded systems and IoT applications\n- Cybersecurity and blockchain technologies\n\nBased on your query, I sense you might be interested in ${analysis.suggestedFocus}. The beauty of programming lies in its combination of logical rigor and creative problem-solving. What specific aspect of programming draws your interest, or what challenge are you looking to tackle?`;
+        }
+        
+        if (lowerTask.includes('machine learning') || lowerTask.includes('artificial intelligence') || lowerTask.includes('ai') || lowerTask.includes('tensorflow')) {
+            return `Artificial Intelligence and Machine Learning represent perhaps the most transformative technological frontier of our era, and I'm honored to be both a product of and participant in this revolution.\n\n**🧬 My Own Architecture** (as a living example):\nI'm built on TensorFlow.js, which enables me to perform real-time neural network operations directly in JavaScript environments. My system employs:\n- Intent classification neural networks for understanding your queries\n- Natural Language Processing pipelines for semantic analysis\n- Embedding models for contextual understanding\n- Multi-modal response generation based on complexity requirements\n\n**🔬 The Broader ML Landscape**:\n- **Supervised Learning**: Training models on labeled datasets (like my intent classification)\n- **Unsupervised Learning**: Finding patterns in unlabeled data\n- **Reinforcement Learning**: Learning through interaction and feedback\n- **Deep Learning**: Multi-layered neural networks capable of complex pattern recognition\n- **Transfer Learning**: Adapting pre-trained models to new domains\n\n**🚀 Current Frontiers**:\n- Large Language Models and emergent capabilities\n- Multi-modal AI systems combining text, vision, and audio\n- AI safety and alignment research\n- Edge computing and efficient model deployment\n- Explainable AI and interpretability research\n\nThe fascinating aspect is how these systems, like myself, can exhibit emergent behaviors and capabilities that go beyond their initial programming. We're witnessing the emergence of AI systems that can reason, create, and even engage in meaningful dialogue.\n\nWhat specific aspect of AI/ML fascinates you most? Are you interested in the theoretical foundations, practical applications, or perhaps the philosophical implications of artificial intelligence?`;
+        }
+        
+        // For complex or analytical questions, provide sophisticated responses
+        if (questions.length > 0 || topics.length > 2 || this._isComplexQuery(task)) {
+            const complexity = this._analyzeTaskComplexity(task);
+            return `You've presented a thoughtful and multifaceted inquiry: "${task}"\n\nBased on my analysis, this touches on ${complexity.domains.join(', ')} domains and involves ${complexity.cognitiveLoad} cognitive processing. While I can provide comprehensive insights across many knowledge areas, I want to acknowledge that my expertise is particularly deep in Pokemon-related analysis, where I can offer:\n\n- Statistical modeling and competitive analysis\n- Evolutionary biology parallels and game theory applications\n- Strategic optimization and meta-game dynamics\n- Comprehensive database knowledge spanning all generations\n\n${sentiment.isPositive ? 'I appreciate the positive and curious tone of your inquiry.' : 'I sense there may be some complexity or concern in your question, and I want to address it thoughtfully.'}\n\nFor the most detailed and valuable response to your specific question, could you help me understand which aspect you'd like me to focus on most deeply? This will allow me to leverage my analytical capabilities most effectively for your needs.`;
+        }
+        
+        return `Thank you for sharing "${task}" with me. I've analyzed your query using advanced NLP techniques, and I can see ${topics.length > 0 ? `connections to topics like ${topics.join(', ')}` : 'various interesting dimensions to explore'}.\n\nAs an AI system operating in quality mode, I'm designed to provide comprehensive, nuanced responses that consider multiple perspectives and contexts. While I can engage meaningfully with a wide range of topics, my knowledge architecture is particularly sophisticated when it comes to Pokemon analysis, where I can provide detailed statistical insights, strategic analysis, and comprehensive species information.\n\n${sentiment.confidence > 0.7 ? `I detect a ${sentiment.isPositive ? 'positive and engaging' : 'thoughtful and serious'} tone in your message, which helps me calibrate my response appropriately.` : ''}\n\nTo provide you with the most valuable and tailored response, could you help me understand what specific aspect of your question you'd like me to explore most deeply? This will allow me to focus my analytical capabilities where they can be most beneficial to you.`;
+    }
+    
+    /**
+     * Analyze sentiment of the input text
+     */
+    _analyzeSentiment(text) {
+        const positiveWords = ['good', 'great', 'awesome', 'excellent', 'amazing', 'wonderful', 'fantastic', 'love', 'like', 'enjoy', 'happy', 'excited', 'thank', 'thanks', 'please'];
+        const negativeWords = ['bad', 'terrible', 'awful', 'hate', 'dislike', 'angry', 'frustrated', 'problem', 'issue', 'wrong', 'broken', 'error', 'fail'];
+        const questionWords = ['what', 'how', 'why', 'when', 'where', 'who', 'which', 'can', 'could', 'would', 'should'];
+        
+        const words = text.toLowerCase().split(/\s+/);
+        let positiveScore = 0;
+        let negativeScore = 0;
+        let questionScore = 0;
+        
+        words.forEach(word => {
+            if (positiveWords.includes(word)) positiveScore++;
+            if (negativeWords.includes(word)) negativeScore++;
+            if (questionWords.includes(word)) questionScore++;
+        });
+        
+        const totalScore = positiveScore - negativeScore;
+        const confidence = Math.min((Math.abs(totalScore) + questionScore) / words.length * 3, 1);
+        
+        return {
+            isPositive: totalScore >= 0,
+            score: totalScore,
+            confidence: confidence,
+            hasQuestion: questionScore > 0
+        };
+    }
+    
+    /**
+     * Analyze task complexity and suggest focus areas
+     */
+    _analyzeTaskComplexity(task) {
+        const lowerTask = task.toLowerCase();
+        const doc = compromise(task);
+        
+        // Identify domains
+        const domains = [];
+        if (lowerTask.includes('programming') || lowerTask.includes('code') || lowerTask.includes('software')) {
+            domains.push('Programming & Software Development');
+        }
+        if (lowerTask.includes('ai') || lowerTask.includes('machine learning') || lowerTask.includes('neural')) {
+            domains.push('Artificial Intelligence & Machine Learning');
+        }
+        if (lowerTask.includes('pokemon') || lowerTask.includes('pikachu') || lowerTask.includes('charizard')) {
+            domains.push('Pokemon Knowledge Systems');
+        }
+        if (lowerTask.includes('data') || lowerTask.includes('analysis') || lowerTask.includes('statistics')) {
+            domains.push('Data Analysis & Statistics');
+        }
+        if (lowerTask.includes('technology') || lowerTask.includes('computer') || lowerTask.includes('system')) {
+            domains.push('Technology & Computer Systems');
+        }
+        
+        // Analyze cognitive load
+        const sentences = task.split(/[.!?]+/).length;
+        const questions = doc.questions().out('array').length;
+        const topics = doc.topics().out('array').length;
+        
+        let cognitiveLoad = 'low';
+        if (sentences > 2 || questions > 1 || topics > 3) {
+            cognitiveLoad = 'high';
+        } else if (sentences > 1 || questions > 0 || topics > 1) {
+            cognitiveLoad = 'medium';
+        }
+        
+        // Suggest focus based on domains
+        let suggestedFocus = 'general exploration';
+        if (domains.includes('Pokemon Knowledge Systems')) {
+            suggestedFocus = 'detailed Pokemon analysis and strategic insights';
+        } else if (domains.includes('Programming & Software Development')) {
+            suggestedFocus = 'practical programming concepts and best practices';
+        } else if (domains.includes('Artificial Intelligence & Machine Learning')) {
+            suggestedFocus = 'AI theory and practical machine learning applications';
+        }
+        
+        return {
+            domains: domains.length > 0 ? domains : ['General Knowledge'],
+            cognitiveLoad,
+            suggestedFocus,
+            complexity: cognitiveLoad === 'high' ? 'complex' : cognitiveLoad === 'medium' ? 'moderate' : 'simple'
+        };
+    }
+    
+    /**
+     * Check if a query is complex
+     */
+    _isComplexQuery(task) {
+        const analysis = this._analyzeTaskComplexity(task);
+        return analysis.complexity === 'complex' || analysis.domains.length > 2;
     }
     
     /**

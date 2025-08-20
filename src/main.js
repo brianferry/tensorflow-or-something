@@ -104,7 +104,7 @@ function createApp() {
                 });
             }
             
-            const { task, stream = false } = req.body;
+            const { task, stream = false, mode } = req.body;
             
             if (!task) {
                 return res.status(400).json({
@@ -112,17 +112,26 @@ function createApp() {
                 });
             }
             
+            // Handle performance mode change
+            if (mode && ['fast', 'balanced', 'quality'].includes(mode)) {
+                if (agent.performanceMode !== mode) {
+                    logger.info(`Switching performance mode from ${agent.performanceMode} to ${mode}`);
+                    agent.performanceMode = mode;
+                }
+            }
+            
             logger.info(`Processing task: ${task.substring(0, 50)}...`);
             
-            // Check cache first
-            const cacheKey = `task_${Buffer.from(task.toLowerCase().trim()).toString('base64')}`;
+            // Include mode in cache key to differentiate responses by performance mode
+            const cacheKey = `task_${mode || agent.performanceMode}_${Buffer.from(task.toLowerCase().trim()).toString('base64')}`;
             const cachedResult = responseCache.get(cacheKey);
             
             if (cachedResult) {
-                logger.info(`Returning cached response for task`);
+                logger.info(`Returning cached response for task (${mode || agent.performanceMode} mode)`);
                 return res.json({
                     result: cachedResult,
                     cached: true,
+                    performance_mode: mode || agent.performanceMode,
                     processing_time: Date.now() - startTime
                 });
             }
@@ -139,6 +148,7 @@ function createApp() {
             res.json({
                 result,
                 cached: false,
+                performance_mode: mode || agent.performanceMode,
                 processing_time: processingTime
             });
             

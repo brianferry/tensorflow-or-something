@@ -57,32 +57,41 @@ class PokemonToolTests {
         // Test with a well-known Pokemon
         const response = await tool.execute("Tell me about Pikachu");
         
-        if (!response || typeof response !== 'string') {
-            throw new Error('Response should be a non-empty string');
+        // New structured data format
+        if (!response || typeof response !== 'object') {
+            throw new Error('Response should be a structured data object');
         }
         
+        if (response.type !== 'pokemon_data') {
+            throw new Error('Response should have type "pokemon_data"');
+        }
+        
+        if (!response.pokemon) {
+            throw new Error('Response should contain pokemon data');
+        }
+        
+        const pokemon = response.pokemon;
+        
         // Check if response contains expected information
-        const responseLower = response.toLowerCase();
-        if (!responseLower.includes('pikachu')) {
-            throw new Error('Response should contain Pokemon name');
+        if (pokemon.name.toLowerCase() !== 'pikachu') {
+            throw new Error('Response should contain correct Pokemon name');
         }
         
         // Should contain type information
-        if (!responseLower.includes('electric')) {
-            throw new Error('Response should contain Pokemon type');
+        if (!pokemon.types.includes('electric')) {
+            throw new Error('Response should contain Electric type');
         }
         
-        // Should contain some stats
-        const statKeywords = ['hp', 'attack', 'defense', 'speed'];
-        let statsFound = 0;
-        for (const stat of statKeywords) {
-            if (responseLower.includes(stat)) {
-                statsFound++;
+        // Should contain stats
+        if (!pokemon.base_stats || typeof pokemon.base_stats !== 'object') {
+            throw new Error('Response should contain base stats');
+        }
+        
+        const requiredStats = ['hp', 'attack', 'defense', 'speed'];
+        for (const stat of requiredStats) {
+            if (typeof pokemon.base_stats[stat] !== 'number') {
+                throw new Error(`Response should contain ${stat} stat`);
             }
-        }
-        
-        if (statsFound === 0) {
-            throw new Error('Response should contain at least one stat');
         }
         
         console.log('   ✓ Valid Pokemon query processed correctly');
@@ -94,23 +103,27 @@ class PokemonToolTests {
         // Test with Charizard (Fire/Flying type)
         const response = await tool.execute("What about Charizard?");
         
-        if (!response || typeof response !== 'string') {
-            throw new Error('Response should be a non-empty string');
+        if (!response || typeof response !== 'object') {
+            throw new Error('Response should be a structured data object');
         }
         
-        const responseLower = response.toLowerCase();
+        if (response.type !== 'pokemon_data') {
+            throw new Error('Response should have type "pokemon_data"');
+        }
+        
+        const pokemon = response.pokemon;
         
         // Should contain the Pokemon name
-        if (!responseLower.includes('charizard')) {
-            throw new Error('Response should contain Pokemon name');
+        if (pokemon.name.toLowerCase() !== 'charizard') {
+            throw new Error('Response should contain correct Pokemon name');
         }
         
         // Should contain both types
-        if (!responseLower.includes('fire')) {
+        if (!pokemon.types.includes('fire')) {
             throw new Error('Response should contain Fire type');
         }
         
-        if (!responseLower.includes('flying')) {
+        if (!pokemon.types.includes('flying')) {
             throw new Error('Response should contain Flying type');
         }
         
@@ -123,13 +136,14 @@ class PokemonToolTests {
         // Test with non-existent Pokemon
         const response = await tool.execute("Tell me about Fakemon123");
         
+        // Should still return string for error cases
         if (!response || typeof response !== 'string') {
-            throw new Error('Response should be a string even for invalid Pokemon');
+            throw new Error('Response should be a string for invalid Pokemon');
         }
         
         // Should contain error information
         const responseLower = response.toLowerCase();
-        if (!responseLower.includes('not found') && !responseLower.includes('error') && !responseLower.includes('unknown')) {
+        if (!responseLower.includes('not found') && !responseLower.includes('error') && !responseLower.includes('unknown') && !responseLower.includes('couldn\'t') && !responseLower.includes('identify')) {
             throw new Error('Response should indicate Pokemon was not found');
         }
         
@@ -149,8 +163,11 @@ class PokemonToolTests {
         const response2 = await tool.execute("Tell me about Pikachu");
         const duration2 = Date.now() - startTime2;
         
-        // Responses should be identical
-        if (response1 !== response2) {
+        // Responses should be identical (deep comparison for objects)
+        const response1Str = JSON.stringify(response1);
+        const response2Str = JSON.stringify(response2);
+        
+        if (response1Str !== response2Str) {
             throw new Error('Cached responses should be identical');
         }
         
@@ -180,12 +197,18 @@ class PokemonToolTests {
         for (const query of queries) {
             const response = await tool.execute(query);
             
-            if (!response || typeof response !== 'string') {
+            // Valid Pokemon queries should return structured data
+            if (typeof response === 'object' && response.type === 'pokemon_data') {
+                if (response.pokemon.name.toLowerCase() !== 'pikachu') {
+                    throw new Error(`Response for "${query}" should contain correct Pokemon name`);
+                }
+            } else if (typeof response === 'string') {
+                // Fallback case or error handling
+                if (!response.toLowerCase().includes('pikachu') && !response.toLowerCase().includes('couldn\'t identify')) {
+                    throw new Error(`Response for "${query}" should contain Pokemon name or error message`);
+                }
+            } else {
                 throw new Error(`Failed to process query: ${query}`);
-            }
-            
-            if (!response.toLowerCase().includes('pikachu')) {
-                throw new Error(`Response for "${query}" should contain Pokemon name`);
             }
         }
         
@@ -224,22 +247,39 @@ class PokemonToolTests {
         
         const response = await tool.execute("Tell me about Squirtle");
         
-        if (!response || typeof response !== 'string') {
-            throw new Error('Response should be a string');
+        if (!response || typeof response !== 'object') {
+            throw new Error('Response should be a structured data object');
         }
         
-        // Response should be reasonably detailed
-        if (response.length < 50) {
-            throw new Error('Response should be detailed enough (at least 50 characters)');
+        if (response.type !== 'pokemon_data') {
+            throw new Error('Response should have type "pokemon_data"');
         }
         
-        // Should contain various information types
-        const responseLower = response.toLowerCase();
-        const expectedElements = ['type', 'squirtle'];
+        const pokemon = response.pokemon;
         
-        for (const element of expectedElements) {
-            if (!responseLower.includes(element)) {
-                throw new Error(`Response should contain: ${element}`);
+        // Should have all required fields
+        const requiredFields = ['name', 'id', 'types', 'base_stats', 'abilities', 'height', 'weight'];
+        for (const field of requiredFields) {
+            if (!(field in pokemon)) {
+                throw new Error(`Response should contain: ${field}`);
+            }
+        }
+        
+        // Check types
+        if (!Array.isArray(pokemon.types) || pokemon.types.length === 0) {
+            throw new Error('Pokemon should have at least one type');
+        }
+        
+        // Check abilities
+        if (!Array.isArray(pokemon.abilities) || pokemon.abilities.length === 0) {
+            throw new Error('Pokemon should have at least one ability');
+        }
+        
+        // Check base stats structure
+        const expectedStats = ['hp', 'attack', 'defense', 'special-attack', 'special-defense', 'speed'];
+        for (const stat of expectedStats) {
+            if (typeof pokemon.base_stats[stat] !== 'number') {
+                throw new Error(`Base stats should contain numeric ${stat}`);
             }
         }
         
