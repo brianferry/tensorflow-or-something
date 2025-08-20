@@ -38,11 +38,11 @@ TensorFlow.js Agent
 
 ### **Performance Modes**
 
-| Mode | Speed | Intelligence | Use Case |
-|------|-------|-------------|----------|
-| **Fast** | 10x faster | Pattern matching | Real-time chat, quick queries |
-| **Balanced** | 5x faster | NLP + patterns | General purpose, production |
-| **Quality** | 2x faster | TensorFlow.js ML | Complex analysis, best accuracy |
+| Mode | Speed | Intelligence | Response Style | Use Case |
+|------|-------|-------------|----------------|----------|
+| **Fast** | 1-5ms | Pattern matching | Brief, template-based | Real-time chat, quick queries |
+| **Balanced** | 10-200ms | NLP + patterns | Detailed, structured | General purpose, production |
+| **Quality** | 50-500ms | TensorFlow.js ML | Comprehensive, contextual | Complex analysis, best accuracy |
 
 ## 📦 Installation
 
@@ -66,6 +66,9 @@ cp .env.example .env
 # Start the service
 npm start
 ```
+
+### **One-Click Deploy**
+[![Deploy on Replit](https://replit.com/badge/github/your-username/tensorflow-agent-service)](https://replit.com/new/github/your-username/tensorflow-agent-service)
 
 ### **Development Mode**
 ```bash
@@ -97,6 +100,57 @@ docker run -p 3000:3000 tensorflow-agent-service
 
 # Run with environment variables
 docker run -p 3000:3000 -e PERFORMANCE_MODE=fast tensorflow-agent-service
+```
+
+## 🔄 Replit Deployment
+
+### **Quick Deploy to Replit**
+1. **Import to Replit**: 
+   - Go to [Replit](https://replit.com)
+   - Click "Create Repl" → "Import from GitHub"
+   - Paste your repository URL
+
+2. **Auto-Configuration**: 
+   - Replit will automatically detect the Node.js project
+   - The `.replit` file configures the environment
+   - Dependencies will install automatically
+
+3. **Run the Service**:
+   ```bash
+   # Click the green "Run" button, or use Shell:
+   npm start
+   ```
+
+4. **Access Your Service**:
+   - Click the URL in the Webview tab
+   - Test with: `https://your-repl-name.your-username.repl.co/health/`
+
+### **Replit-Specific Features**
+- **Always-On**: Enable Always-On for 24/7 availability
+- **Environment Variables**: Set in the Secrets tab
+- **Performance**: Optimized for Replit's resource constraints
+- **Auto-SSL**: HTTPS enabled by default
+
+### **Replit Performance Tips**
+```bash
+# For better Replit performance, use fast mode
+PERFORMANCE_MODE=fast
+
+# Reduce cache TTL for memory efficiency
+CACHE_TTL=900
+
+# Disable file logging (uses memory instead)
+LOG_TO_FILE=false
+```
+
+### **Environment Configuration for Replit**
+```bash
+# In Replit Secrets tab, add:
+PORT=3000
+PERFORMANCE_MODE=balanced
+CACHE_TTL=1800
+LOG_LEVEL=info
+NODE_ENV=production
 ```
 
 ## 🔧 Configuration
@@ -205,7 +259,99 @@ curl http://localhost:3000/health/
 ```bash
 # Run test suite
 npm test
+
+# Run specific test categories
+npm run test:unit
+npm run test:api
+npm run test:performance
 ```
+
+## 🎯 Performance Mode Examples
+
+### **Fast Mode** (Pattern Matching)
+**Query:** "Tell me about Pikachu"
+```json
+{
+  "result": "I can help with Pokemon information! Please specify which Pokemon you'd like to know about.",
+  "processing_time": 2,
+  "mode": "fast"
+}
+```
+
+**Query:** "What is machine learning?"
+```json
+{
+  "result": "I can help with general questions. Machine learning is a subset of artificial intelligence.",
+  "processing_time": 1,
+  "mode": "fast"
+}
+```
+
+### **Balanced Mode** (NLP + Patterns)
+**Query:** "Tell me about Pikachu"
+```json
+{
+  "result": "**Pikachu (#25)**\n\n**Physical Characteristics:**\n- Type: Electric\n- Height: 0.4m\n- Weight: 6.0kg\n\n**Base Stats:**\n- HP: 35\n- Attack: 55\n- Defense: 40\n- Special Attack: 50\n- Special Defense: 50\n- Speed: 90\n\n**Abilities:**\n- Static: May paralyze on contact\n- Lightning Rod: Draws electric attacks\n\nPikachu is the iconic Electric Mouse Pokemon, known for storing electricity in its cheek pouches.",
+  "processing_time": 156,
+  "mode": "balanced"
+}
+```
+
+**Query:** "What is machine learning?"
+```json
+{
+  "result": "Machine learning is a branch of artificial intelligence that enables computers to learn and improve from experience without being explicitly programmed. It uses algorithms to analyze data, identify patterns, and make predictions or decisions.",
+  "processing_time": 8,
+  "mode": "balanced"
+}
+```
+
+### **Quality Mode** (TensorFlow.js ML)
+**Query:** "Tell me about Pikachu"
+```json
+{
+  "result": "**Pikachu (#25) - The Electric Mouse Pokemon**\n\n**Physical Characteristics:**\n- Type: Electric\n- Species: Mouse Pokemon\n- Height: 0.4m (1'04\")\n- Weight: 6.0kg (13.2 lbs)\n- Category: Mouse Pokemon\n\n**Base Stats Total: 320**\n- HP: 35\n- Attack: 55\n- Defense: 40\n- Special Attack: 50\n- Special Defense: 50\n- Speed: 90\n\n**Abilities:**\n- **Static**: Contact with the Pokemon may cause paralysis\n- **Lightning Rod (Hidden)**: Draws in all Electric-type moves\n\n**Notable Features:**\n- Stores electricity in cheek pouches\n- Releases electrical discharges when surprised\n- Tail acts as a grounding rod\n- Evolves from Pichu with high friendship\n- Evolves into Raichu with Thunder Stone\n\n**Habitat:** Pikachu inhabits forests and is often found in groups. They are known to live in old and unused buildings in cities as well.\n\n**Fun Fact:** Pikachu is the franchise mascot and has appeared in every Pokemon generation since Red/Blue!",
+  "processing_time": 234,
+  "mode": "quality"
+}
+```
+
+**Query:** "What is machine learning?"
+```json
+{
+  "result": "**Machine Learning: A Comprehensive Overview**\n\nMachine learning is a sophisticated subset of artificial intelligence (AI) that empowers computer systems to automatically learn, adapt, and improve their performance through experience without requiring explicit programming for every task.\n\n**Core Concepts:**\n- **Pattern Recognition**: Algorithms identify complex patterns in large datasets\n- **Predictive Modeling**: Systems make informed predictions about future outcomes\n- **Adaptive Learning**: Models continuously improve as they process more data\n\n**Types of Machine Learning:**\n1. **Supervised Learning**: Uses labeled training data (e.g., image classification)\n2. **Unsupervised Learning**: Finds patterns in unlabeled data (e.g., clustering)\n3. **Reinforcement Learning**: Learns through trial and error with rewards/penalties\n\n**Real-World Applications:**\n- Recommendation systems (Netflix, Amazon)\n- Natural language processing (chatbots, translation)\n- Computer vision (facial recognition, medical imaging)\n- Autonomous vehicles and robotics\n- Financial fraud detection\n\n**Popular Algorithms:**\n- Neural Networks & Deep Learning\n- Decision Trees and Random Forests\n- Support Vector Machines\n- K-Means Clustering\n- Linear/Logistic Regression\n\nMachine learning has revolutionized industries by enabling data-driven decision making and automation of complex tasks that were previously impossible for traditional programming approaches.",
+  "processing_time": 312,
+  "mode": "quality"
+}
+```
+
+### **Performance Comparison Summary**
+
+| Mode | Pokemon Query Time | General Query Time | Response Detail | Intelligence Level |
+|------|-------------------|-------------------|----------------|-------------------|
+| **Fast** | ~2ms | ~1ms | Basic | Pattern matching |
+| **Balanced** | ~150ms | ~8ms | Detailed | NLP + patterns |
+| **Quality** | ~230ms | ~300ms | Comprehensive | ML-powered |
+
+### **Choosing the Right Mode**
+
+**Use Fast Mode When:**
+- Building real-time chat applications
+- Need sub-5ms response times
+- Simple query routing is sufficient
+- Resource constraints are critical
+
+**Use Balanced Mode When:**
+- General production deployment
+- Need good balance of speed and intelligence
+- Pokemon queries are primary use case
+- Want detailed structured responses
+
+**Use Quality Mode When:**
+- Complex reasoning is required
+- Response quality is more important than speed
+- Building educational or analytical tools
+- Need comprehensive, contextual answers
 
 ## 🔍 Performance Comparison
 
@@ -394,4 +540,7 @@ MIT License - see LICENSE file for details
 npm install && npm start
 ```
 
-**💡 Need help?** Check the examples above or open an issue on GitHub.
+**� Deploy to Replit in 1 click:**
+[![Deploy on Replit](https://replit.com/badge/github/your-username/tensorflow-agent-service)](https://replit.com/new/github/your-username/tensorflow-agent-service)
+
+**�💡 Need help?** Check the examples above, [Replit deployment guide](REPLIT_DEPLOY.md), or open an issue on GitHub.

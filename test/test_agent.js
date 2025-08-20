@@ -3,6 +3,8 @@
  */
 
 const axios = require('axios');
+const { spawn } = require('child_process');
+const path = require('path');
 
 const BASE_URL = 'http://localhost:3000';
 const client = axios.create({ baseURL: BASE_URL, timeout: 30000 });
@@ -10,6 +12,74 @@ const client = axios.create({ baseURL: BASE_URL, timeout: 30000 });
 class AgentTester {
     constructor() {
         this.testResults = [];
+        this.serverProcess = null;
+        this.serverStartedByTest = false;
+    }
+    async checkServerOrStart() {
+        // First check if server is already running
+        try {
+            await client.get('/', { timeout: 2000 });
+            console.log('   ✓ Server already running, proceeding with tests');
+            return;
+        } catch (error) {
+            // Server not running, we need to start it
+            console.log('   🔄 Server not running, starting it...');
+        }
+        
+        // Start the server
+        const serverPath = path.join(__dirname, '..', 'src', 'main.js');
+        this.serverProcess = spawn('node', [serverPath], {
+            stdio: ['pipe', 'pipe', 'pipe'],
+            detached: false
+        });
+        
+        this.serverStartedByTest = true;
+        
+        // Wait for server to start
+        await new Promise((resolve, reject) => {
+            let attempts = 0;
+            const maxAttempts = 30; // 30 seconds timeout
+            
+            const checkServer = async () => {
+                attempts++;
+                try {
+                    await client.get('/', { timeout: 1000 });
+                    console.log('   ✅ Server started successfully');
+                    resolve();
+                } catch (error) {
+                    if (attempts >= maxAttempts) {
+                        reject(new Error('Server failed to start within 30 seconds'));
+                    } else {
+                        setTimeout(checkServer, 1000);
+                    }
+                }
+            };
+            
+            setTimeout(checkServer, 2000); // Give server 2 seconds before first check
+        });
+    }
+    
+    async cleanup() {
+        if (this.serverStartedByTest && this.serverProcess) {
+            console.log('\n   🧹 Cleaning up test server...');
+            this.serverProcess.kill('SIGTERM');
+            
+            // Wait for graceful shutdown
+            await new Promise(resolve => {
+                this.serverProcess.on('exit', () => {
+                    console.log('   ✅ Test server stopped');
+                    resolve();
+                });
+                
+                // Force kill after 5 seconds if graceful shutdown fails
+                setTimeout(() => {
+                    if (this.serverProcess && !this.serverProcess.killed) {
+                        this.serverProcess.kill('SIGKILL');
+                    }
+                    resolve();
+                }, 5000);
+            });
+        }
     }
     
     async runTest(name, testFn) {
@@ -220,16 +290,24 @@ class AgentTester {
         console.log('🚀 Starting TensorFlow.js Agent Service Test Suite\n');
         console.log(`Testing against: ${BASE_URL}`);
         
-        await this.runTest('Health Check', () => this.testHealthCheck());
-        await this.runTest('Detailed Health Check', () => this.testDetailedHealth());
-        await this.runTest('Tools List', () => this.testToolsList());
-        await this.runTest('Pokemon Queries', () => this.testPokemonQuery());
-        await this.runTest('General Queries', () => this.testGeneralQuery());
-        await this.runTest('Cache Functionality', () => this.testCacheFunction());
-        await this.runTest('Error Handling', () => this.testErrorHandling());
-        await this.runTest('Performance Modes', () => this.testPerformanceModes());
-        
-        this.printSummary();
+        try {
+            // Ensure server is running
+            await this.checkServerOrStart();
+            
+            await this.runTest('Health Check', () => this.testHealthCheck());
+            await this.runTest('Detailed Health Check', () => this.testDetailedHealth());
+            await this.runTest('Tools List', () => this.testToolsList());
+            await this.runTest('Pokemon Queries', () => this.testPokemonQuery());
+            await this.runTest('General Queries', () => this.testGeneralQuery());
+            await this.runTest('Cache Functionality', () => this.testCacheFunction());
+            await this.runTest('Error Handling', () => this.testErrorHandling());
+            await this.runTest('Performance Modes', () => this.testPerformanceModes());
+            
+            this.printSummary();
+        } finally {
+            // Always cleanup, even if tests fail
+            await this.cleanup();
+        }
     }
     
     printSummary() {

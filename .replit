@@ -1,0 +1,18 @@
+modules = ["nodejs-20"]
+
+[nix]
+channel = "stable-24_05"
+
+[deployment]
+run = ["sh", "-c", "npm install && npm start"]
+
+[env]
+PORT = "3000"
+PERFORMANCE_MODE = "balanced"
+CACHE_TTL = "1800"
+LOG_LEVEL = "info"
+LOG_TO_FILE = "false"
+
+[[ports]]
+localPort = 3000
+externalPort = 80

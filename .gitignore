@@ -64,3 +64,9 @@ out/
 test-results/
 coverage/
 .vercel
+
+# Replit specific
+.replit_setup_complete
+.config/
+.upm/
+replit.nix.bak
