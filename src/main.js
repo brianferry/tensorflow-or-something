@@ -23,7 +23,7 @@ const path = require('path');
 const NodeCache = require('node-cache');
 require('dotenv').config();
 
-const TensorFlowAgent = require('./agent/tensorflow_agent');
+const TensorFlowAgent = require('./agent/tensorflow_agent_refactored');
 const PokemonTool = require('./tools/pokemon_tool');
 const logger = require('./utils/logger');
 

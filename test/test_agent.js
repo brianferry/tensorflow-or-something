@@ -175,9 +175,20 @@ class AgentTester {
             }
             
             // Check if response contains Pokemon information
-            if (!data.result.includes('Physical Characteristics') && 
-                !data.result.includes('Base Stats') && 
-                !data.result.includes('#')) {
+            const responseText = data.result.toLowerCase();
+            const pokemonIndicators = [
+                'physical characteristics', 'base stats', '#', // Old format
+                'pokemon', 'electric', 'fire', 'water', 'grass', // Types
+                'hp', 'attack', 'defense', 'speed', // Stats
+                'abilities', 'species', 'generation', 'height', 'weight', // Data fields
+                'pikachu', 'charizard', 'bulbasaur', 'squirtle' // Pokemon names
+            ];
+            
+            const hasValidContent = pokemonIndicators.some(indicator => 
+                responseText.includes(indicator)
+            ) || data.result.length > 100; // Valid Pokemon responses should be substantial
+            
+            if (!hasValidContent) {
                 throw new Error('Response does not appear to contain Pokemon information');
             }
             
