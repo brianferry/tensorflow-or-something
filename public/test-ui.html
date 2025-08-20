@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧪 TensorFlow Agent Performance Mode Tester</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            padding: 40px;
+        }
+
+        .test-form {
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            border: 2px solid #e9ecef;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+            font-size: 1.1em;
+        }
+
+        .form-group input, .form-group textarea, .form-group select {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .form-group input:focus, .form-group textarea:focus, .form-group select:focus {
+            outline: none;
+            border-color: #4facfe;
+            box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.1);
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .mode-selector {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+
+        .mode-option {
+            position: relative;
+        }
+
+        .mode-option input[type="radio"] {
+            position: absolute;
+            opacity: 0;
+        }
+
+        .mode-option label {
+            display: block;
+            padding: 20px;
+            border: 2px solid #ddd;
+            border-radius: 10px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: white;
+        }
+
+        .mode-option input[type="radio"]:checked + label {
+            border-color: #4facfe;
+            background: #4facfe;
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(79, 172, 254, 0.3);
+        }
+
+        .mode-title {
+            font-weight: bold;
+            font-size: 1.2em;
+            margin-bottom: 5px;
+        }
+
+        .mode-desc {
+            font-size: 0.9em;
+            opacity: 0.8;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 15px 30px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            flex: 1;
+            min-width: 150px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(79, 172, 254, 0.3);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .results-container {
+            margin-top: 30px;
+        }
+
+        .result-card {
+            background: white;
+            border: 2px solid #e9ecef;
+            border-radius: 15px;
+            margin-bottom: 25px;
+            overflow: hidden;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+        }
+
+        .result-header {
+            padding: 20px;
+            border-bottom: 2px solid #e9ecef;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .result-mode {
+            font-weight: bold;
+            font-size: 1.3em;
+            color: #333;
+        }
+
+        .result-meta {
+            display: flex;
+            gap: 15px;
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .result-content {
+            padding: 25px;
+            line-height: 1.6;
+            font-size: 16px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #4facfe;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border: 1px solid #f5c6cb;
+        }
+
+        .success {
+            background: #d4edda;
+            color: #155724;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border: 1px solid #c3e6cb;
+        }
+
+        .example-queries {
+            background: #e7f3ff;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 4px solid #4facfe;
+        }
+
+        .example-queries h3 {
+            margin-bottom: 15px;
+            color: #0066cc;
+        }
+
+        .example-queries ul {
+            list-style: none;
+        }
+
+        .example-queries li {
+            margin: 8px 0;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 5px;
+            transition: background 0.2s;
+        }
+
+        .example-queries li:hover {
+            background: rgba(79, 172, 254, 0.1);
+        }
+
+        .comparison-view {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+
+        .mode-fast { border-left: 4px solid #28a745; }
+        .mode-balanced { border-left: 4px solid #ffc107; }
+        .mode-quality { border-left: 4px solid #dc3545; }
+
+        @media (max-width: 768px) {
+            .container {
+                margin: 10px;
+                border-radius: 15px;
+            }
+            
+            .header {
+                padding: 20px;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .main-content {
+                padding: 20px;
+            }
+            
+            .mode-selector {
+                grid-template-columns: 1fr;
+            }
+            
+            .btn-group {
+                flex-direction: column;
+            }
+            
+            .comparison-view {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧪 TensorFlow Agent Tester</h1>
+            <p>Test different AI performance modes and see how responses vary</p>
+        </div>
+
+        <div class="main-content">
+            <div class="test-form">
+                <div class="form-group">
+                    <label for="query">🎯 Enter your query:</label>
+                    <textarea id="query" placeholder="Tell me about Pikachu for competitive battling">Tell me about Pikachu for competitive battling</textarea>
+                </div>
+
+                <div class="example-queries">
+                    <h3>💡 Example Queries (click to use):</h3>
+                    <ul>
+                        <li onclick="setQuery('Tell me about Pikachu for competitive battling')">⚡ Tell me about Pikachu for competitive battling</li>
+                        <li onclick="setQuery('What makes Charizard good for competitive play?')">🔥 What makes Charizard good for competitive play?</li>
+                        <li onclick="setQuery('Show me Bulbasaur type advantages')">🌱 Show me Bulbasaur type advantages</li>
+                        <li onclick="setQuery('Compare Squirtle vs Wartortle stats')">💧 Compare Squirtle vs Wartortle stats</li>
+                        <li onclick="setQuery('Tell me about Electric type Pokemon')">⚡ Tell me about Electric type Pokemon</li>
+                    </ul>
+                </div>
+
+                <div class="form-group">
+                    <label>🎛️ Test Mode:</label>
+                    <div class="mode-selector">
+                        <div class="mode-option">
+                            <input type="radio" id="single" name="testMode" value="single" checked>
+                            <label for="single">
+                                <div class="mode-title">Single Mode</div>
+                                <div class="mode-desc">Test one performance mode</div>
+                            </label>
+                        </div>
+                        <div class="mode-option">
+                            <input type="radio" id="compare" name="testMode" value="compare">
+                            <label for="compare">
+                                <div class="mode-title">Compare All</div>
+                                <div class="mode-desc">Test all three modes</div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group" id="singleModeGroup">
+                    <label>⚡ Performance Mode:</label>
+                    <div class="mode-selector">
+                        <div class="mode-option">
+                            <input type="radio" id="fast" name="mode" value="fast" checked>
+                            <label for="fast">
+                                <div class="mode-title">🏃 Fast</div>
+                                <div class="mode-desc">Quick, concise responses</div>
+                            </label>
+                        </div>
+                        <div class="mode-option">
+                            <input type="radio" id="balanced" name="mode" value="balanced">
+                            <label for="balanced">
+                                <div class="mode-title">⚖️ Balanced</div>
+                                <div class="mode-desc">Natural, conversational</div>
+                            </label>
+                        </div>
+                        <div class="mode-option">
+                            <input type="radio" id="quality" name="mode" value="quality">
+                            <label for="quality">
+                                <div class="mode-title">🎓 Quality</div>
+                                <div class="mode-desc">Comprehensive analysis</div>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="btn-group">
+                    <button class="btn btn-primary" onclick="runTest()">🚀 Run Test</button>
+                    <button class="btn btn-secondary" onclick="clearResults()">🗑️ Clear Results</button>
+                </div>
+            </div>
+
+            <div id="results" class="results-container"></div>
+        </div>
+    </div>
+
+    <script>
+        // Get base URL from current location
+        const BASE_URL = window.location.origin;
+        
+        function setQuery(query) {
+            document.getElementById('query').value = query;
+        }
+
+        function getSelectedMode() {
+            return document.querySelector('input[name="mode"]:checked').value;
+        }
+
+        function getTestMode() {
+            return document.querySelector('input[name="testMode"]:checked').value;
+        }
+
+        function showLoading(message = 'Running test...') {
+            const results = document.getElementById('results');
+            results.innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>${message}</p>
+                </div>
+            `;
+        }
+
+        function showError(message) {
+            const results = document.getElementById('results');
+            results.innerHTML = `<div class="error"><strong>Error:</strong> ${message}</div>`;
+        }
+
+        function showSuccess(message) {
+            const results = document.getElementById('results');
+            results.innerHTML = `<div class="success">${message}</div>`;
+        }
+
+        async function testSingleMode(query, mode) {
+            const response = await fetch(`${BASE_URL}/run_task/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    task: query,
+                    mode: mode
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            return {
+                mode: mode,
+                response: data.result,
+                cached: data.cached,
+                processing_time: data.processing_time,
+                performance_mode: data.performance_mode
+            };
+        }
+
+        async function testAllModes(query) {
+            const modes = ['fast', 'balanced', 'quality'];
+            const results = [];
+            
+            for (const mode of modes) {
+                try {
+                    const result = await testSingleMode(query, mode);
+                    results.push(result);
+                } catch (error) {
+                    results.push({
+                        mode: mode,
+                        error: error.message
+                    });
+                }
+            }
+            
+            return results;
+        }
+
+        function formatResponse(text) {
+            if (!text) return '';
+            
+            // Convert markdown-style formatting to HTML
+            return text
+                .replace(/^# (.*$)/gm, '<h1>$1</h1>')
+                .replace(/^## (.*$)/gm, '<h2>$1</h2>')
+                .replace(/^### (.*$)/gm, '<h3>$1</h3>')
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                .replace(/^\- (.*$)/gm, '<li>$1</li>')
+                .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
+                .replace(/\n\n/g, '</p><p>')
+                .replace(/^(.)/gm, '<p>$1')
+                .replace(/(.)$/gm, '$1</p>')
+                .replace(/<p><h/g, '<h')
+                .replace(/<\/h([1-6])><\/p>/g, '</h$1>')
+                .replace(/<p><ul>/g, '<ul>')
+                .replace(/<\/ul><\/p>/g, '</ul>')
+                .replace(/<p><\/p>/g, '');
+        }
+
+        function displayResults(results, query) {
+            const resultsDiv = document.getElementById('results');
+            
+            if (Array.isArray(results)) {
+                // Multiple results (comparison mode)
+                let html = `
+                    <h2>📊 Comparison Results</h2>
+                    <p><strong>Query:</strong> "${query}"</p>
+                    <div class="comparison-view">
+                `;
+                
+                results.forEach(result => {
+                    const modeClass = `mode-${result.mode}`;
+                    if (result.error) {
+                        html += `
+                            <div class="result-card ${modeClass}">
+                                <div class="result-header">
+                                    <div class="result-mode">${getModeIcon(result.mode)} ${result.mode.toUpperCase()}</div>
+                                </div>
+                                <div class="result-content">
+                                    <div class="error">Error: ${result.error}</div>
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        html += `
+                            <div class="result-card ${modeClass}">
+                                <div class="result-header">
+                                    <div class="result-mode">${getModeIcon(result.mode)} ${result.mode.toUpperCase()}</div>
+                                    <div class="result-meta">
+                                        <span>⏱️ ${result.processing_time}ms</span>
+                                        <span>📏 ${result.response.length} chars</span>
+                                        ${result.cached ? '<span>💾 Cached</span>' : ''}
+                                    </div>
+                                </div>
+                                <div class="result-content">
+                                    ${formatResponse(result.response)}
+                                </div>
+                            </div>
+                        `;
+                    }
+                });
+                
+                html += '</div>';
+                resultsDiv.innerHTML = html;
+            } else {
+                // Single result
+                const result = results;
+                const modeClass = `mode-${result.mode}`;
+                
+                if (result.error) {
+                    resultsDiv.innerHTML = `
+                        <div class="error">
+                            <strong>Error testing ${result.mode} mode:</strong> ${result.error}
+                        </div>
+                    `;
+                } else {
+                    resultsDiv.innerHTML = `
+                        <div class="result-card ${modeClass}">
+                            <div class="result-header">
+                                <div class="result-mode">${getModeIcon(result.mode)} ${result.mode.toUpperCase()} MODE</div>
+                                <div class="result-meta">
+                                    <span>⏱️ ${result.processing_time}ms</span>
+                                    <span>📏 ${result.response.length} characters</span>
+                                    ${result.cached ? '<span>💾 Cached</span>' : ''}
+                                </div>
+                            </div>
+                            <div class="result-content">
+                                ${formatResponse(result.response)}
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+        }
+
+        function getModeIcon(mode) {
+            switch(mode) {
+                case 'fast': return '🏃';
+                case 'balanced': return '⚖️';
+                case 'quality': return '🎓';
+                default: return '🔧';
+            }
+        }
+
+        async function runTest() {
+            const query = document.getElementById('query').value.trim();
+            if (!query) {
+                showError('Please enter a query');
+                return;
+            }
+
+            const testMode = getTestMode();
+            
+            try {
+                if (testMode === 'single') {
+                    const mode = getSelectedMode();
+                    showLoading(`Testing ${mode} mode...`);
+                    const result = await testSingleMode(query, mode);
+                    displayResults(result, query);
+                } else {
+                    showLoading('Testing all modes... This may take a moment.');
+                    const results = await testAllModes(query);
+                    displayResults(results, query);
+                }
+            } catch (error) {
+                showError(`Failed to run test: ${error.message}`);
+            }
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+
+        // Toggle single mode group visibility
+        document.querySelectorAll('input[name="testMode"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                const singleModeGroup = document.getElementById('singleModeGroup');
+                if (this.value === 'single') {
+                    singleModeGroup.style.display = 'block';
+                } else {
+                    singleModeGroup.style.display = 'none';
+                }
+            });
+        });
+
+        // Allow Enter key to submit
+        document.getElementById('query').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter' && e.ctrlKey) {
+                runTest();
+            }
+        });
+
+        // Initial setup
+        document.addEventListener('DOMContentLoaded', function() {
+            // Auto-focus on query input
+            document.getElementById('query').focus();
+        });
+    </script>
+</body>
+</html>

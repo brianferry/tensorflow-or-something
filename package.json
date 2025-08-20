@@ -14,6 +14,7 @@
     "test:all": "node test/test_all.js all",
     "test:unit": "node test/test_all.js unit",
     "test:integration": "node test/test_all.js integration",
+    "test:replit:modes": "node test-replit-modes.js",
     "test:performance": "node test/test_all.js performance",
     "test:security": "node test/test_all.js security",
     "test:api": "node test/test_all.js api",
