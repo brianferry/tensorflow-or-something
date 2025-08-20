@@ -16,3 +16,12 @@ LOG_TO_FILE = "false"
 [[ports]]
 localPort = 3000
 externalPort = 80
+
+[gitHubImport]
+requiredFiles = [".replit", "package.json", "src/", "test/"]
+
+[languages.javascript]
+pattern = "**/{*.js,*.mjs,*.ts}"
+
+[unitTest]
+language = "javascript"

@@ -1,0 +1,35 @@
+modules = ["nodejs-20"]
+
+[nix]
+channel = "stable-23_11"
+
+[deployment]
+run = ["sh", "-c", "npm install && npm test"]
+
+[env]
+NODE_ENV = "test"
+PORT = "3001"
+PERFORMANCE_MODE = "balanced"
+CACHE_TTL = "300"
+LOG_LEVEL = "debug"
+LOG_TO_FILE = "false"
+TEST_MODE = "true"
+
+[[ports]]
+localPort = 3001
+externalPort = 80
+
+[languages.javascript]
+pattern = "**/{*.js,*.mjs,*.ts}"
+
+[interpreter]
+command = ["node", "test/test_all.js"]
+
+[unitTest]
+language = "javascript"
+
+[debugger]
+support = true
+
+[gitHubImport]
+requiredFiles = [".test.replit", "package.json", "test/"]

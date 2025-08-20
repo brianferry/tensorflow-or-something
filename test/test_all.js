@@ -6,11 +6,14 @@
 const AgentUnitTests = require('./test_agent_unit_corrected');
 const PokemonToolTests = require('./test_pokemon_tool_corrected');
 const QualityModeTests = require('./test_quality_mode');
+// Use Replit-optimized API tests if in test environment
+const APITests = process.env.NODE_ENV === 'test' ? 
+    require('./test_api_replit') : 
+    require('./test_agent'); // Original API tests
 // Temporarily disable Jest-dependent tests
 // const IntegrationTests = require('./test_integration');
 // const PerformanceTests = require('./test_performance');
 // const SecurityTests = require('./test_security');
-const APITests = require('./test_agent'); // Original API tests
 
 class MasterTestRunner {
     constructor() {
